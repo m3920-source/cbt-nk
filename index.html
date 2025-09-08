@@ -34,6 +34,15 @@
         .login-box {
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
         }
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
@@ -77,193 +86,154 @@
     </div>
 
     <!-- Dashboard Interface -->
-    <div id="dashboardInterface" class="hidden min-h-screen bg-gray-100">
-        <!-- Header -->
-        <header class="bg-blue-600 text-white shadow-lg">
-            <div class="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center">
-                        <div class="bg-white rounded-full w-10 h-10 flex items-center justify-center mr-3">
-                            <i class="fas fa-graduation-cap text-blue-600"></i>
-                        </div>
-                        <h1 class="text-xl font-bold">SD IT NURUL KAUTSAR</h1>
-                    </div>
-                    
-                    <div class="flex items-center space-x-4">
-                        <div class="text-right">
-                            <p class="text-sm font-medium" id="dashboardUserInfo">Nama User</p>
-                            <p class="text-xs text-blue-200" id="dashboardUserRole">Role</p>
-                        </div>
-                        <button id="dashboardLogoutBtn" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Keluar
-                        </button>
-                    </div>
+    <div id="dashboardInterface" class="hidden flex h-screen bg-gray-200">
+        <!-- Sidebar -->
+        <div id="dashboardSidebar" class="w-64 bg-blue-900 text-white flex flex-col">
+            <div class="px-4 py-6 text-center border-b border-blue-800">
+                <h2 class="text-xl font-bold">CBT Dashboard</h2>
+                <div class="mt-4">
+                    <p id="dashboardUserInfo" class="font-semibold"></p>
+                    <p id="dashboardUserRole" class="text-sm text-blue-300"></p>
                 </div>
             </div>
-        </header>
-
-        <!-- Navigation Menu -->
-        <nav class="bg-blue-700 text-white">
-            <div class="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
-                <div class="flex flex-wrap space-x-8" id="dashboardNav">
-                    <!-- Navigation items will be populated by JavaScript -->
-                </div>
+            <nav id="dashboardNav" class="flex-1 overflow-y-auto"></nav>
+            <div class="px-4 py-4 border-t border-blue-800">
+                <button id="dashboardLogoutBtn" class="w-full flex items-center justify-center px-4 py-2 text-sm font-medium hover:bg-blue-800 transition duration-200 rounded-md">
+                    <i class="fas fa-sign-out-alt mr-2"></i>
+                    Logout
+                </button>
             </div>
-        </nav>
-
+        </div>
         <!-- Main Content -->
-        <main class="w-full px-2 sm:px-6 lg:px-8 lg:max-w-7xl lg:mx-auto py-8">
-            <div id="dashboardContent">
-                <!-- Content will be populated by JavaScript -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Header for Admin/Guru -->
+            <header id="dashboardHeader" class="hidden bg-white shadow-md z-10 p-4">
+                <!-- Content populated by JavaScript -->
+            </header>
+            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-8">
+                <div id="dashboardContent">
+                    <!-- Content will be populated by JavaScript -->
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Management Modal -->
+    <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden flex items-center justify-center z-40">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 class="text-lg font-bold text-gray-800" id="modalTitle">Modal Title</h3>
+                <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
-        </main>
+            <div class="p-6 overflow-y-auto" id="modalContent">
+                <!-- Modal content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Modal -->
+    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 class="text-lg font-bold text-gray-900 mb-4" id="confirmTitle">Konfirmasi</h3>
+            <p class="text-gray-700 mb-6" id="confirmMessage">Apakah Anda yakin?</p>
+            <div class="flex justify-end space-x-4">
+                <button id="confirmCancelBtn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Batal</button>
+                <button id="confirmOkBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gemini Generation Modal -->
+    <div id="geminiModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-6 border-b">
+                <h3 class="text-xl font-bold text-gray-800" id="geminiModalTitle">✨ Buat Soal Otomatis dengan AI</h3>
+                <button onclick="UI.hideGeminiModal()" class="text-gray-400 hover:text-gray-600 text-2xl">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto" id="geminiModalContent">
+                <!-- Gemini Modal content will be populated by JavaScript -->
+            </div>
+        </div>
     </div>
 
     <!-- Exam Interface -->
     <div id="examInterface" class="hidden min-h-screen bg-gray-100">
         <!-- Header -->
         <header class="bg-blue-600 text-white shadow-lg">
-            <div class="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center">
-                        <div class="bg-white rounded-full w-10 h-10 flex items-center justify-center mr-3">
-                            <i class="fas fa-graduation-cap text-blue-600"></i>
-                        </div>
-                        <h1 class="text-xl font-bold">SD IT NURUL KAUTSAR</h1>
-                    </div>
-                    
-                    <div class="flex items-center space-x-4">
-                        <div class="text-right">
-                            <p class="text-sm font-medium" id="examUserInfo">Nama Siswa</p>
-                            <p class="text-xs text-blue-200">Ujian Berlangsung</p>
-                        </div>
-                        <button id="logoutBtn" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Keluar
-                        </button>
-                    </div>
+            <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold">Ujian Online</h1>
+                    <p id="examUserInfo" class="text-sm text-blue-200"></p>
+                </div>
+                <div class="flex items-center bg-white text-gray-800 px-4 py-2 rounded-lg shadow">
+                    <i class="far fa-clock mr-2 text-blue-600"></i>
+                    <span id="examTimer" class="font-bold text-lg">01:00:00</span>
+                </div>
+                <div>
+                    <button id="logoutBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Keluar
+                    </button>
                 </div>
             </div>
         </header>
-
-        <!-- Timer and Controls -->
-        <div class="bg-white border-b shadow-sm">
-            <div class="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4">
-                <div class="flex flex-wrap justify-between items-center gap-4">
-                    <div class="flex items-center space-x-4">
-                        <div class="bg-red-500 text-white px-4 py-2 rounded-lg font-bold timer-warning">
-                            <i class="fas fa-clock mr-2"></i>
-                            <span id="examTimer">01:00:00</span>
-                        </div>
-                        <button id="questionListBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-200">
-                            <i class="fas fa-list mr-2"></i>Daftar Soal
-                        </button>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <span class="text-gray-600 font-medium">Soal <span id="currentQuestionNum">1</span> dari <span id="totalQuestions">25</span></span>
-                        <button id="submitExamBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200">
-                            <i class="fas fa-paper-plane mr-2"></i>Selesai
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Question Content -->
-        <div class="w-full px-2 sm:px-4 lg:px-8 lg:max-w-5xl lg:mx-auto py-8">
-            <div class="bg-white rounded-xl shadow-lg p-4 sm:p-8">
+        <!-- Main Content -->
+        <div class="container mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8">
+            <!-- Question Area -->
+            <div class="w-full lg:w-3/4 bg-white p-8 rounded-xl shadow-lg">
                 <div id="questionContent">
-                    <!-- Question content will be populated by JavaScript -->
+                    <!-- Question will be rendered here -->
                 </div>
-                
-                <!-- Navigation Buttons -->
-                <div class="flex flex-col sm:flex-row sm:justify-between items-center mt-8 pt-6 border-t border-gray-200 space-y-4 sm:space-y-0">
-                    <button id="prevQuestionBtn" class="w-full sm:w-auto bg-gray-600 text-white px-8 py-3 rounded-lg hover:bg-gray-700 transition duration-200 font-medium">
-                        <i class="fas fa-chevron-left mr-2"></i>Soal Sebelumnya
-                    </button>
-                    
-                    <div class="text-center hidden sm:block">
-                        <div class="text-sm text-gray-500 mb-2">Progress</div>
-                        <div class="w-48 bg-gray-200 rounded-full h-2">
-                            <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 4%"></div>
+            <!-- Main Content -->
+            <div class="container mx-auto px-6 py-8 flex flex-col gap-8">
+                <!-- Navigation & Progress (TOP) -->
+                <div class="w-full bg-white p-6 rounded-xl shadow-lg">
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                        <h3 class="font-bold text-gray-800 text-lg mb-4 sm:mb-0">Navigasi Soal</h3>
+                        <div class="flex items-center gap-4 w-full sm:w-auto">
+                            <div class="flex-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <h3 class="font-semibold text-gray-800 text-sm">Progress</h3>
+                                    <p class="text-xs text-gray-600">
+                                        <span id="currentQuestionNum">1</span> / <span id="totalQuestions">0</span>
+                                    </p>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            <button id="submitExamBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 whitespace-nowrap">
+                                <i class="fas fa-flag-checkered mr-2"></i> Selesai
+                            </button>
                         </div>
                     </div>
-                    
-                    <button id="nextQuestionBtn" class="w-full sm:w-auto bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition duration-200 font-medium">
-                        Soal Selanjutnya<i class="fas fa-chevron-right ml-2"></i>
-                    </button>
+                    <div id="questionNavigation" class="flex items-center gap-3 overflow-x-auto pb-3 no-scrollbar">
+                        <!-- Navigation buttons will be rendered here -->
+                    </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- Question List Modal -->
-    <div id="questionListModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden flex items-center justify-center z-50">
-        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-screen overflow-y-auto">
-            <div class="flex justify-between items-center p-6 border-b">
-                <h3 class="text-xl font-bold text-gray-800">Daftar Soal</h3>
-                <button id="closeQuestionListBtn" class="text-gray-400 hover:text-gray-600 text-2xl">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="p-6">
-                <div id="questionNavigation" class="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-4 mb-6">
-                    <!-- Question navigation buttons will be populated by JavaScript -->
-                </div>
-                <div class="flex items-center justify-center space-x-8 text-sm">
-                    <div class="flex items-center">
-                        <div class="w-6 h-6 bg-green-500 rounded-full mr-2"></div>
-                        <span class="text-gray-700">Sudah dijawab</span>
+                <!-- Question Area -->
+                <div class="w-full bg-white p-8 rounded-xl shadow-lg">
+                    <div id="questionContent">
+                        <!-- Question will be rendered here -->
                     </div>
-                    <div class="flex items-center">
-                        <div class="w-6 h-6 bg-blue-500 rounded-full mr-2"></div>
-                        <span class="text-gray-700">Sedang dikerjakan</span>
-                    </div>
-                    <div class="flex items-center">
-                        <div class="w-6 h-6 bg-gray-300 rounded-full mr-2"></div>
-                        <span class="text-gray-700">Belum dijawab</span>
+                    <div class="mt-8 pt-6 border-t flex justify-between items-center">
+                        <button id="prevQuestionBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center">
+                            <i class="fas fa-chevron-left mr-2"></i> Sebelumnya
+                        </button>
+                        <button id="nextQuestionBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center">
+                            Selanjutnya <i class="fas fa-chevron-right ml-2"></i>
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Management Modal -->
-    <div id="managementModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden flex items-center justify-center z-50">
-        <div class="bg-white rounded-xl shadow-2xl max-w-4xl w-full mx-4 max-h-screen overflow-y-auto">
-            <div class="flex justify-between items-center p-6 border-b">
-                <h3 class="text-xl font-bold text-gray-800" id="modalTitle">Modal Title</h3>
-                <button id="closeModalBtn" class="text-gray-400 hover:text-gray-600 text-2xl">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="p-6" id="modalContent">
-                <!-- Modal content will be populated by JavaScript -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Confirmation Modal -->
-    <div id="confirmModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden flex items-center justify-center z-50">
-        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4">
-            <div class="p-6">
-                <div class="flex items-center mb-4">
-                    <div class="bg-red-100 rounded-full p-3 mr-4">
-                        <i class="fas fa-exclamation-triangle text-red-600 text-xl"></i>
-                    </div>
-                    <h3 class="text-lg font-bold text-gray-800" id="confirmTitle">Konfirmasi</h3>
-                </div>
-                <p class="text-gray-600 mb-6" id="confirmMessage">Apakah Anda yakin?</p>
-                <div class="flex justify-end space-x-3">
-                    <button id="confirmCancelBtn" class="px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50">
-                        Batal
-                    </button>
-                    <button id="confirmOkBtn" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
-                        Ya, Lanjutkan
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- Question List Modal (REMOVED) -->
 
     <script>
         // =================================================================
@@ -1130,6 +1100,183 @@
                     `}).join('');
             },
 
+            showAutoGenerateModal() {
+                const lastData = AppState.lastQuestionData;
+                let classOptions = '';
+                 if (AppState.currentUser.role === 'guru' && AppState.currentUser.kelas) {
+                    const teacherGrade = AppState.currentUser.kelas.charAt(0);
+                    const availableClasses = AppState.classes.filter(c => c.nama.startsWith(teacherGrade));
+                    classOptions = availableClasses.map(c => `<option value="${c.nama}" ${lastData.kelas === c.nama ? 'selected' : ''}>${c.nama}</option>`).join('');
+                } else {
+                    classOptions = AppState.classes.map(c => `<option value="${c.nama}" ${lastData.kelas === c.nama ? 'selected' : ''}>${c.nama}</option>`).join('');
+                }
+
+                const content = `
+                    <form id="geminiGenerateForm" class="space-y-4">
+                        <p class="text-sm text-gray-600 mb-4">Isi form di bawah ini untuk membuat soal secara otomatis menggunakan AI. Pastikan topik yang dimasukkan spesifik.</p>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Tahun Ajaran</label>
+                                <select name="tahunAjaran" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">${UI.getYearOptions(lastData.tahunAjaran)}</select>
+                            </div>
+                             <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Semester Ujian</label>
+                                <select name="semester" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">${UI.getSemesterOptions(lastData.semester)}</select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Mata Pelajaran</label>
+                                <select name="mataPelajaran" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Pilih Mata Pelajaran</option>
+                                    ${AppState.subjects.map(s => `<option value="${s.nama}" ${lastData.mataPelajaran === s.nama ? 'selected' : ''}>${s.nama}</option>`).join('')}
+                                </select>
+                            </div>
+                             <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Kelas</label>
+                                <select name="kelas" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Pilih Kelas</option>
+                                    ${classOptions}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Kode Soal (Dasar)</label>
+                                <input type="text" name="kodeSoal" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Contoh: PAI-STS-1">
+                            </div>
+                        </div>
+
+                         <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Topik / Materi Pembahasan</label>
+                            <input type="text" name="topik" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Contoh: Perang Diponegoro, Penjumlahan Pecahan">
+                        </div>
+
+                        <div class="p-4 border rounded-lg bg-gray-50">
+                            <label class="block text-sm font-medium text-gray-700 mb-3">Tentukan Jumlah Soal per Tipe (Total Maks. 100)</label>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Pilihan Ganda</label>
+                                    <input type="number" name="jumlah_pg" min="0" max="100" value="5" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Isian Singkat</label>
+                                    <input type="number" name="jumlah_isian" min="0" max="100" value="0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Uraian / Esai</label>
+                                    <input type="number" name="jumlah_uraian" min="0" max="100" value="0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-end pt-4">
+                            <button type="submit" class="w-full bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition duration-200 font-semibold"><i class="fas fa-magic mr-2"></i>Buat Soal</button>
+                        </div>
+                    </form>
+                    <div id="geminiResultArea" class="mt-6"></div>
+                `;
+                UI.showGeminiModal('✨ Buat Soal Otomatis dengan AI', content);
+
+                document.getElementById('geminiGenerateForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const form = e.target;
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    const resultArea = document.getElementById('geminiResultArea');
+                    
+                    const formData = new FormData(form);
+                    const promptData = Object.fromEntries(formData);
+
+                    const jumlahPg = parseInt(promptData.jumlah_pg) || 0;
+                    const jumlahIsian = parseInt(promptData.jumlah_isian) || 0;
+                    const jumlahUraian = parseInt(promptData.jumlah_uraian) || 0;
+                    const totalSoal = jumlahPg + jumlahIsian + jumlahUraian;
+
+                    if (totalSoal <= 0) {
+                        UI.showNotification('Masukkan jumlah soal yang ingin dibuat.', 'error');
+                        return;
+                    }
+                    if (totalSoal > 100) {
+                        UI.showNotification('Total jumlah soal tidak boleh melebihi 100.', 'error');
+                        return;
+                    }
+
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sedang membuat soal...';
+                    resultArea.innerHTML = '<div class="text-center p-8"><i class="fas fa-robot fa-spin text-3xl text-purple-600"></i><p class="mt-3 text-gray-600">AI sedang bekerja, mohon tunggu sebentar...</p></div>';
+
+                    const generatedQuestions = await GeminiHelper.generateQuestions(promptData);
+
+                    if (generatedQuestions && generatedQuestions.length > 0) {
+                        this.renderGeneratedQuestions(generatedQuestions, promptData, resultArea);
+                    } else {
+                        resultArea.innerHTML = '<div class="text-center p-8 bg-red-50 rounded-lg"><i class="fas fa-exclamation-triangle text-3xl text-red-600"></i><p class="mt-3 text-red-700 font-semibold">Gagal membuat soal.</p><p class="text-sm text-red-600">Terjadi kesalahan saat menghubungi AI. Coba lagi beberapa saat.</p></div>';
+                    }
+                    
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '<i class="fas fa-magic mr-2"></i>Buat Soal';
+                });
+            },
+
+            renderGeneratedQuestions(questions, metadata, container) {
+                let html = '<h3 class="text-lg font-bold mb-4">Hasil Soal yang Dibuat:</h3>';
+                html += questions.map((q, index) => {
+                    let optionsHtml = '';
+                    if(q.pilihan && q.pilihan.length > 0) {
+                        optionsHtml = `<ul class="list-disc list-inside space-y-1 pl-4 mt-2">${q.pilihan.map((opt, i) => `<li class="${i === q.correct ? 'font-bold text-green-700' : ''}">${opt}</li>`).join('')}</ul>`;
+                    }
+                    return `<div class="p-4 border rounded-lg mb-3 bg-gray-50">
+                                <p class="font-semibold">${index + 1}. ${q.pertanyaan}</p>
+                                ${optionsHtml}
+                            </div>`;
+                }).join('');
+
+                html += `<div class="flex justify-end pt-4 mt-4 border-t">
+                            <button id="saveGeneratedQuestionsBtn" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold"><i class="fas fa-save mr-2"></i>Simpan Semua Soal</button>
+                         </div>`;
+                container.innerHTML = html;
+
+                document.getElementById('saveGeneratedQuestionsBtn').addEventListener('click', async () => {
+                    const button = document.getElementById('saveGeneratedQuestionsBtn');
+                    button.disabled = true;
+                    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Menyimpan...';
+
+                    const batch = db.batch();
+                    const baseCode = metadata.kodeSoal;
+
+                    questions.forEach((q, index) => {
+                        const questionDocRef = db.collection('examQuestions').doc();
+                        
+                        const newQuestionData = {
+                            tahunAjaran: metadata.tahunAjaran,
+                            semester: metadata.semester,
+                            mataPelajaran: metadata.mataPelajaran,
+                            kelas: metadata.kelas,
+                            kode: baseCode, // FIX: All generated questions share the same base code
+                            tipe: q.tipe,
+                            pertanyaan: q.pertanyaan,
+                            pilihan: q.pilihan || [],
+                            correct: (q.correct !== undefined && q.correct !== null) ? q.correct : null,
+                            gambar: null,
+                            createdBy: AppState.currentUser.nama,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        batch.set(questionDocRef, newQuestionData);
+                    });
+
+                    try {
+                        await batch.commit();
+                        UI.hideGeminiModal();
+                        UI.showNotification(`${questions.length} soal berhasil disimpan!`, 'success');
+                    } catch(error) {
+                        console.error('Error saving generated questions:', error);
+                        UI.showNotification('Gagal menyimpan soal!', 'error');
+                        button.disabled = false;
+                        button.innerHTML = '<i class="fas fa-save mr-2"></i>Simpan Semua Soal';
+                    }
+                });
+            },
+
             // =================================================================
             // Result Management (Firebase Integration)
             // =================================================================
@@ -1581,6 +1728,94 @@
         };
 
         // =================================================================
+        // GEMINI API HELPER
+        // =================================================================
+        const GeminiHelper = {
+            async generateQuestions(promptData) {
+                const apiKey = ""; // API key is handled by the environment
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                const systemPrompt = `Anda adalah asisten pembuatan soal untuk guru SD. Buat soal berdasarkan topik, mata pelajaran, dan kelas yang diberikan. Pastikan jawaban pilihan ganda bervariasi dan pengecohnya masuk akal. Jangan membuat soal yang terlalu sulit untuk level SD. Selalu berikan respon dalam format JSON yang valid sesuai skema yang diminta, dan sertakan tipe soal ('pilihan_ganda', 'isian', 'uraian') untuk setiap soal.`;
+                
+                const jumlahPg = parseInt(promptData.jumlah_pg) || 0;
+                const jumlahIsian = parseInt(promptData.jumlah_isian) || 0;
+                const jumlahUraian = parseInt(promptData.jumlah_uraian) || 0;
+
+                let requestedTypes = [];
+                if (jumlahPg > 0) requestedTypes.push(`${jumlahPg} soal Pilihan Ganda`);
+                if (jumlahIsian > 0) requestedTypes.push(`${jumlahIsian} soal Isian Singkat`);
+                if (jumlahUraian > 0) requestedTypes.push(`${jumlahUraian} soal Uraian`);
+
+                const userQuery = `
+                    Topik: "${promptData.topik}"
+                    Mata Pelajaran: "${promptData.mataPelajaran}"
+                    Kelas: "${promptData.kelas}"
+                    
+                    Buatkan soal-soal berikut: ${requestedTypes.join(', ')}.
+
+                    Untuk Pilihan Ganda, berikan 4 pilihan dan tandai jawaban yang benar (correct) dengan indeks mulai dari 0.
+                    Untuk setiap soal, sertakan properti "tipe" dengan nilai 'pilihan_ganda', 'isian', atau 'uraian'.
+                `;
+
+                const payload = {
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    contents: [{
+                        parts: [{ text: userQuery }]
+                    }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "ARRAY",
+                            items: {
+                                type: "OBJECT",
+                                properties: {
+                                    tipe: { type: "STRING" },
+                                    pertanyaan: { type: "STRING" },
+                                    pilihan: { 
+                                        type: "ARRAY",
+                                        items: { type: "STRING" }
+                                    },
+                                    correct: { type: "NUMBER" }
+                                },
+                                required: ["tipe", "pertanyaan"]
+                            }
+                        }
+                    }
+                };
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.json();
+                        console.error('Gemini API Error:', errorBody);
+                        throw new Error(`API request failed with status ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+
+                    if (candidate && candidate.content?.parts?.[0]?.text) {
+                        const jsonText = candidate.content.parts[0].text;
+                        return JSON.parse(jsonText);
+                    } else {
+                        throw new Error("Invalid response structure from Gemini API.");
+                    }
+                } catch (error) {
+                    console.error('Error calling Gemini API:', error);
+                    return null;
+                }
+            }
+        };
+
+
+        // =================================================================
         // AUTHENTICATION SYSTEM
         // =================================================================
         const Auth = {
@@ -1652,6 +1887,16 @@
                 document.getElementById('managementModal').classList.add('hidden');
             },
 
+            showGeminiModal(title, content) {
+                document.getElementById('geminiModalTitle').innerHTML = title;
+                document.getElementById('geminiModalContent').innerHTML = content;
+                document.getElementById('geminiModal').classList.remove('hidden');
+            },
+
+            hideGeminiModal() {
+                document.getElementById('geminiModal').classList.add('hidden');
+            },
+
             showConfirmModal(title, message, onConfirm) {
                 document.getElementById('confirmTitle').textContent = title;
                 document.getElementById('confirmMessage').innerHTML = message.replace(/\n/g, '<br>');
@@ -1679,16 +1924,22 @@
                 document.getElementById('loginScreen').classList.add('hidden');
                 document.getElementById('dashboardInterface').classList.remove('hidden');
                 document.getElementById('examInterface').classList.add('hidden');
-                this.updateDashboardUserInfo();
-                this.setupDashboardNavigation();
+                
+                const sidebar = document.getElementById('dashboardSidebar');
+                const header = document.getElementById('dashboardHeader');
 
+                // All roles (admin, guru, siswa) will now use the header navigation
+                sidebar.classList.add('hidden');
+                header.classList.remove('hidden');
+                this.setupDashboardHeader();
+                
+                let defaultView = 'dashboard';
                 if (AppState.currentUser.role === 'guru') {
-                    this.setActiveNav('questions');
-                    this.showDashboardView('questions');
-                } else {
-                    this.setActiveNav('dashboard');
-                    this.showDashboardView('dashboard');
+                    defaultView = 'questions';
                 }
+                
+                this.setActiveNav(defaultView);
+                this.showDashboardView(defaultView);
             },
 
             async showExamInterface() {
@@ -1717,6 +1968,65 @@
                 if (AppState.currentUser) {
                     document.getElementById('examUserInfo').textContent = AppState.currentUser.nama;
                 }
+            },
+
+            setupDashboardHeader() {
+                const header = document.getElementById('dashboardHeader');
+                let navItems = [];
+
+                if (AppState.currentUser.role === 'admin') {
+                    navItems = [
+                        { id: 'dashboard', label: 'Dashboard', icon: 'fas fa-tachometer-alt' },
+                        { id: 'users', label: 'Pengguna', icon: 'fas fa-users' },
+                        { id: 'classes', label: 'Kelas', icon: 'fas fa-school' },
+                        { id: 'subjects', label: 'Mapel', icon: 'fas fa-book' }
+                    ];
+                } else if (AppState.currentUser.role === 'guru') {
+                    navItems = [
+                        { id: 'questions', label: 'Manajemen Soal', icon: 'fas fa-question-circle' },
+                        { id: 'results', label: 'Hasil Ujian', icon: 'fas fa-chart-bar' },
+                        { id: 'grades', label: 'Daftar Nilai', icon: 'fas fa-list-alt' }
+                    ];
+                } else if (AppState.currentUser.role === 'siswa') {
+                    navItems = [
+                        { id: 'dashboard', label: 'Dashboard', icon: 'fas fa-tachometer-alt' },
+                        { id: 'student-results', label: 'Hasil Ujian', icon: 'fas fa-chart-bar' },
+                        { id: 'student-grades', label: 'Daftar Nilai', icon: 'fas fa-list-alt' }
+                    ];
+                }
+
+                header.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <h2 class="text-xl font-bold text-gray-800">SD IT NURUL KAUTSAR</h2>
+                            <nav id="headerNav" class="ml-10 flex items-center space-x-1 border-l pl-4">
+                                ${navItems.map(item => `
+                                    <button class="px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 nav-item" data-view="${item.id}">
+                                        <i class="${item.icon} mr-2"></i>${item.label}
+                                    </button>
+                                `).join('')}
+                            </nav>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="text-right mr-4">
+                                 <p class="font-semibold text-gray-800">${AppState.currentUser.nama}</p>
+                                 <p class="text-sm text-gray-500">${AppState.currentUser.role.toUpperCase()}</p>
+                            </div>
+                            <button id="headerLogoutBtn" class="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition duration-200" title="Logout">
+                                <i class="fas fa-sign-out-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                header.querySelectorAll('.nav-item').forEach(item => {
+                    item.addEventListener('click', (e) => {
+                        const view = e.currentTarget.dataset.view;
+                        this.setActiveNav(view);
+                        this.showDashboardView(view);
+                    });
+                });
+                document.getElementById('headerLogoutBtn').addEventListener('click', () => UI.showConfirmModal('Konfirmasi Keluar', 'Apakah Anda yakin ingin keluar?', () => Auth.logout()));
             },
 
             setupDashboardNavigation() {
@@ -1761,13 +2071,16 @@
             },
 
             setActiveNav(activeView) {
-                document.querySelectorAll('.nav-item').forEach(item => {
-                    item.classList.remove('bg-blue-800');
+                // Reset and set for sidebar items
+                document.querySelectorAll('#dashboardNav .nav-item').forEach(item => {
+                    item.classList.toggle('bg-blue-800', item.dataset.view === activeView);
                 });
-                const activeItem = document.querySelector(`[data-view="${activeView}"]`);
-                if (activeItem) {
-                    activeItem.classList.add('bg-blue-800');
-                }
+                // Reset and set for header items
+                document.querySelectorAll('#headerNav .nav-item').forEach(item => {
+                    item.classList.toggle('bg-blue-100', item.dataset.view === activeView);
+                    item.classList.toggle('text-blue-600', item.dataset.view === activeView);
+                    item.classList.toggle('font-semibold', item.dataset.view === activeView);
+                });
             },
 
             showDashboardView(view) {
@@ -1992,6 +2305,7 @@
                         <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
                             <h2 class="text-2xl font-bold text-gray-900">Manajemen Soal</h2>
                             <div class="flex items-center gap-2">
+                                <button onclick="Management.showAutoGenerateModal()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition duration-200"><i class="fas fa-magic mr-2"></i>✨ Buat Soal Otomatis</button>
                                 <button onclick="Management.deleteFilteredQuestions()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"><i class="fas fa-trash-alt mr-2"></i>Hapus Soal</button>
                                 <button onclick="Management.downloadQuestionsPDF()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"><i class="fas fa-download mr-2"></i>Download PDF</button>
                                 <button onclick="Management.showAddQuestionModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-200"><i class="fas fa-plus mr-2"></i>Tambah Soal</button>
@@ -2046,6 +2360,183 @@
                 });
                 // Initial load
                 document.getElementById('applyFilterBtn').click();
+            },
+
+            showAutoGenerateModal() {
+                const lastData = AppState.lastQuestionData;
+                let classOptions = '';
+                 if (AppState.currentUser.role === 'guru' && AppState.currentUser.kelas) {
+                    const teacherGrade = AppState.currentUser.kelas.charAt(0);
+                    const availableClasses = AppState.classes.filter(c => c.nama.startsWith(teacherGrade));
+                    classOptions = availableClasses.map(c => `<option value="${c.nama}" ${lastData.kelas === c.nama ? 'selected' : ''}>${c.nama}</option>`).join('');
+                } else {
+                    classOptions = AppState.classes.map(c => `<option value="${c.nama}" ${lastData.kelas === c.nama ? 'selected' : ''}>${c.nama}</option>`).join('');
+                }
+
+                const content = `
+                    <form id="geminiGenerateForm" class="space-y-4">
+                        <p class="text-sm text-gray-600 mb-4">Isi form di bawah ini untuk membuat soal secara otomatis menggunakan AI. Pastikan topik yang dimasukkan spesifik.</p>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Tahun Ajaran</label>
+                                <select name="tahunAjaran" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">${UI.getYearOptions(lastData.tahunAjaran)}</select>
+                            </div>
+                             <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Semester Ujian</label>
+                                <select name="semester" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">${UI.getSemesterOptions(lastData.semester)}</select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Mata Pelajaran</label>
+                                <select name="mataPelajaran" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Pilih Mata Pelajaran</option>
+                                    ${AppState.subjects.map(s => `<option value="${s.nama}" ${lastData.mataPelajaran === s.nama ? 'selected' : ''}>${s.nama}</option>`).join('')}
+                                </select>
+                            </div>
+                             <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Kelas</label>
+                                <select name="kelas" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <option value="">Pilih Kelas</option>
+                                    ${classOptions}
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Kode Soal (Dasar)</label>
+                                <input type="text" name="kodeSoal" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Contoh: PAI-STS-1">
+                            </div>
+                        </div>
+
+                         <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Topik / Materi Pembahasan</label>
+                            <input type="text" name="topik" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Contoh: Perang Diponegoro, Penjumlahan Pecahan">
+                        </div>
+
+                        <div class="p-4 border rounded-lg bg-gray-50">
+                            <label class="block text-sm font-medium text-gray-700 mb-3">Tentukan Jumlah Soal per Tipe (Total Maks. 100)</label>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Pilihan Ganda</label>
+                                    <input type="number" name="jumlah_pg" min="0" max="100" value="5" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Isian Singkat</label>
+                                    <input type="number" name="jumlah_isian" min="0" max="100" value="0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Uraian / Esai</label>
+                                    <input type="number" name="jumlah_uraian" min="0" max="100" value="0" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-end pt-4">
+                            <button type="submit" class="w-full bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition duration-200 font-semibold"><i class="fas fa-magic mr-2"></i>Buat Soal</button>
+                        </div>
+                    </form>
+                    <div id="geminiResultArea" class="mt-6"></div>
+                `;
+                UI.showGeminiModal('✨ Buat Soal Otomatis dengan AI', content);
+
+                document.getElementById('geminiGenerateForm').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const form = e.target;
+                    const submitButton = form.querySelector('button[type="submit"]');
+                    const resultArea = document.getElementById('geminiResultArea');
+                    
+                    const formData = new FormData(form);
+                    const promptData = Object.fromEntries(formData);
+
+                    const jumlahPg = parseInt(promptData.jumlah_pg) || 0;
+                    const jumlahIsian = parseInt(promptData.jumlah_isian) || 0;
+                    const jumlahUraian = parseInt(promptData.jumlah_uraian) || 0;
+                    const totalSoal = jumlahPg + jumlahIsian + jumlahUraian;
+
+                    if (totalSoal <= 0) {
+                        UI.showNotification('Masukkan jumlah soal yang ingin dibuat.', 'error');
+                        return;
+                    }
+                    if (totalSoal > 100) {
+                        UI.showNotification('Total jumlah soal tidak boleh melebihi 100.', 'error');
+                        return;
+                    }
+
+                    submitButton.disabled = true;
+                    submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sedang membuat soal...';
+                    resultArea.innerHTML = '<div class="text-center p-8"><i class="fas fa-robot fa-spin text-3xl text-purple-600"></i><p class="mt-3 text-gray-600">AI sedang bekerja, mohon tunggu sebentar...</p></div>';
+
+                    const generatedQuestions = await GeminiHelper.generateQuestions(promptData);
+
+                    if (generatedQuestions && generatedQuestions.length > 0) {
+                        this.renderGeneratedQuestions(generatedQuestions, promptData, resultArea);
+                    } else {
+                        resultArea.innerHTML = '<div class="text-center p-8 bg-red-50 rounded-lg"><i class="fas fa-exclamation-triangle text-3xl text-red-600"></i><p class="mt-3 text-red-700 font-semibold">Gagal membuat soal.</p><p class="text-sm text-red-600">Terjadi kesalahan saat menghubungi AI. Coba lagi beberapa saat.</p></div>';
+                    }
+                    
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = '<i class="fas fa-magic mr-2"></i>Buat Soal';
+                });
+            },
+
+            renderGeneratedQuestions(questions, metadata, container) {
+                let html = '<h3 class="text-lg font-bold mb-4">Hasil Soal yang Dibuat:</h3>';
+                html += questions.map((q, index) => {
+                    let optionsHtml = '';
+                    if(q.pilihan && q.pilihan.length > 0) {
+                        optionsHtml = `<ul class="list-disc list-inside space-y-1 pl-4 mt-2">${q.pilihan.map((opt, i) => `<li class="${i === q.correct ? 'font-bold text-green-700' : ''}">${opt}</li>`).join('')}</ul>`;
+                    }
+                    return `<div class="p-4 border rounded-lg mb-3 bg-gray-50">
+                                <p class="font-semibold">${index + 1}. ${q.pertanyaan}</p>
+                                ${optionsHtml}
+                            </div>`;
+                }).join('');
+
+                html += `<div class="flex justify-end pt-4 mt-4 border-t">
+                            <button id="saveGeneratedQuestionsBtn" class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold"><i class="fas fa-save mr-2"></i>Simpan Semua Soal</button>
+                         </div>`;
+                container.innerHTML = html;
+
+                document.getElementById('saveGeneratedQuestionsBtn').addEventListener('click', async () => {
+                    const button = document.getElementById('saveGeneratedQuestionsBtn');
+                    button.disabled = true;
+                    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Menyimpan...';
+
+                    const batch = db.batch();
+                    const baseCode = metadata.kodeSoal;
+
+                    questions.forEach((q, index) => {
+                        const questionDocRef = db.collection('examQuestions').doc();
+                        
+                        const newQuestionData = {
+                            tahunAjaran: metadata.tahunAjaran,
+                            semester: metadata.semester,
+                            mataPelajaran: metadata.mataPelajaran,
+                            kelas: metadata.kelas,
+                            kode: `${baseCode}-${index+1}`,
+                            tipe: q.tipe,
+                            pertanyaan: q.pertanyaan,
+                            pilihan: q.pilihan || [],
+                            correct: q.correct,
+                            gambar: null,
+                            createdBy: AppState.currentUser.nama,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        batch.set(questionDocRef, newQuestionData);
+                    });
+
+                    try {
+                        await batch.commit();
+                        UI.hideGeminiModal();
+                        UI.showNotification(`${questions.length} soal berhasil disimpan!`, 'success');
+                    } catch(error) {
+                        console.error('Error saving generated questions:', error);
+                        UI.showNotification('Gagal menyimpan soal!', 'error');
+                        button.disabled = false;
+                        button.innerHTML = '<i class="fas fa-save mr-2"></i>Simpan Semua Soal';
+                    }
+                });
             },
 
             showResultManagement() {
@@ -2467,7 +2958,7 @@
                 
                 questionContent.innerHTML = content;
                 document.getElementById('prevQuestionBtn').disabled = AppState.currentQuestion === 0;
-                document.getElementById('nextQuestionBtn').innerHTML = AppState.currentQuestion === AppState.questions.length - 1 ? 'Selesai Ujian <i class="fas fa-flag-checkered ml-2"></i>' : 'Soal Selanjutnya <i class="fas fa-chevron-right ml-2"></i>';
+                document.getElementById('nextQuestionBtn').innerHTML = AppState.currentQuestion === AppState.questions.length - 1 ? 'Selesai <i class="fas fa-flag-checkered ml-2"></i>' : 'Selanjutnya <i class="fas fa-chevron-right ml-2"></i>';
                 
                 questionContent.querySelectorAll('input[name="answer"], textarea[name="answer"]').forEach(input => {
                     input.addEventListener('change', () => {
@@ -2496,7 +2987,6 @@
                 this.renderQuestion();
                 this.updateQuestionNavigation();
                 this.updateProgress();
-                document.getElementById('questionListModal').classList.add('hidden');
             },
 
             updateProgress() {
@@ -2627,8 +3117,8 @@
             getYearOptions(selected) {
                 const currentYear = new Date().getFullYear();
                 let options = '';
-                for (let i = 0; i < 6; i++) {
-                    const year = currentYear + i - 2; // Start from 2 years ago for more options
+                for (let i = 0; i < 10; i++) {
+                    const year = currentYear + i;
                     const academicYear = `${year}/${year + 1}`;
                     options += `<option value="${academicYear}" ${selected === academicYear ? 'selected' : ''}>${academicYear}</option>`;
                 }
@@ -2750,8 +3240,6 @@
                 }
             });
 
-            document.getElementById('questionListBtn').addEventListener('click', () => document.getElementById('questionListModal').classList.remove('hidden'));
-            document.getElementById('closeQuestionListBtn').addEventListener('click', () => document.getElementById('questionListModal').classList.add('hidden'));
             document.getElementById('submitExamBtn').addEventListener('click', () => {
                  const unansweredCount = AppState.questions.length - Object.keys(AppState.examAnswers).filter(k => AppState.examAnswers[k] !== undefined && AppState.examAnswers[k] !== '').length;
                 let message = 'Apakah Anda yakin ingin mengakhiri ujian?';
@@ -2762,8 +3250,13 @@
             document.getElementById('dashboardLogoutBtn').addEventListener('click', () => UI.showConfirmModal('Konfirmasi Keluar', 'Apakah Anda yakin ingin keluar?', () => Auth.logout()));
             document.getElementById('closeModalBtn').addEventListener('click', () => UI.hideModal());
             document.getElementById('managementModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) UI.hideModal(); });
-            document.getElementById('questionListModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden'); });
             
+            // Listener for the new Gemini modal
+            const geminiModal = document.getElementById('geminiModal');
+            if(geminiModal) {
+                geminiModal.addEventListener('click', (e) => { if (e.target === e.currentTarget) UI.hideGeminiModal(); });
+            }
+
             document.getElementById('confirmCancelBtn').addEventListener('click', () => document.getElementById('confirmModal').classList.add('hidden'));
 
         });
@@ -2777,4 +3270,3 @@
     </script>
 </body>
 </html>
-
