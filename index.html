@@ -22,9 +22,9 @@
         .timer-warning { animation: pulse 1s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
         .question-nav-btn { transition: all 0.3s ease; }
-        .question-nav-btn.answered { background-color: #10b981; color: white; }
-        .question-nav-btn.current { background-color: #3b82f6; color: white; }
-        .question-nav-btn.unanswered { background-color: #e5e7eb; color: #374151; }
+        .question-nav-btn.answered { background-color: #22c55e; color: white; } /* Corresponds to bg-green-500 */
+        .question-nav-btn.current { background-color: #3b82f6; color: white; } /* Corresponds to bg-blue-500 */
+        .question-nav-btn.unanswered { background-color: #d1d5db; color: #374151; } /* Corresponds to bg-gray-300 */
         .question-nav-btn:hover { transform: scale(1.05); }
         .modal-backdrop { backdrop-filter: blur(4px); }
         .login-container {
@@ -48,7 +48,7 @@
 <body class="bg-gray-50 font-sans">
     <!-- Login Screen -->
     <div id="loginScreen" class="login-container flex items-center justify-center p-4">
-        <div class="login-box bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md fade-in">
+        <div class="login-box bg-white rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md fade-in">
             <!-- Header -->
             <div class="text-center mb-8">
                 <div class="bg-blue-600 text-white py-4 px-6 rounded-xl mb-6">
@@ -110,7 +110,7 @@
             <header id="dashboardHeader" class="hidden bg-white shadow-md z-10 p-4">
                 <!-- Content populated by JavaScript -->
             </header>
-            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-8">
+            <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 sm:p-8">
                 <div id="dashboardContent">
                     <!-- Content will be populated by JavaScript -->
                 </div>
@@ -162,78 +162,74 @@
 
     <!-- Exam Interface -->
     <div id="examInterface" class="hidden min-h-screen bg-gray-100">
-        <!-- Header -->
-        <header class="bg-blue-600 text-white shadow-lg">
-            <div class="container mx-auto px-6 py-4 flex justify-between items-center">
-                <div>
-                    <h1 class="text-2xl font-bold">Ujian Online</h1>
-                    <p id="examUserInfo" class="text-sm text-blue-200"></p>
+        <!-- Exam Top Bar -->
+        <div class="bg-white shadow-md sticky top-0 z-20">
+            <div class="container mx-auto px-4 sm:px-6 py-3 flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <p id="examUserInfo" class="text-sm font-semibold text-gray-800 hidden sm:block"></p>
+                    <div class="flex items-center bg-red-100 text-red-700 px-3 py-2 rounded-lg shadow-sm">
+                        <i class="far fa-clock mr-2"></i>
+                        <span id="examTimer" class="font-bold text-md">01:00:00</span>
+                    </div>
                 </div>
-                <div class="flex items-center bg-white text-gray-800 px-4 py-2 rounded-lg shadow">
-                    <i class="far fa-clock mr-2 text-blue-600"></i>
-                    <span id="examTimer" class="font-bold text-lg">01:00:00</span>
-                </div>
-                <div>
-                    <button id="logoutBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
-                        <i class="fas fa-sign-out-alt mr-2"></i>Keluar
+                <button id="questionListBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 flex items-center">
+                    <i class="fas fa-list-ul mr-2"></i><span class="hidden sm:inline">Daftar Soal</span>
+                </button>
+                <div class="flex items-center gap-4">
+                    <p class="text-sm text-gray-600 font-medium hidden sm:block">
+                        Soal <span id="currentQuestionNum">1</span> dari <span id="totalQuestions">0</span>
+                    </p>
+                    <button id="submitExamBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 whitespace-nowrap">
+                        <i class="fas fa-flag-checkered mr-2"></i> Selesai
                     </button>
                 </div>
             </div>
-        </header>
+        </div>
+
         <!-- Main Content -->
-        <div class="container mx-auto px-6 py-8 flex flex-col lg:flex-row gap-8">
+        <div class="container mx-auto px-4 py-6 sm:px-6 sm:py-8">
             <!-- Question Area -->
-            <div class="w-full lg:w-3/4 bg-white p-8 rounded-xl shadow-lg">
+            <div class="w-full bg-white p-6 sm:p-8 rounded-xl shadow-lg">
                 <div id="questionContent">
                     <!-- Question will be rendered here -->
                 </div>
-            <!-- Main Content -->
-            <div class="container mx-auto px-6 py-8 flex flex-col gap-8">
-                <!-- Navigation & Progress (TOP) -->
-                <div class="w-full bg-white p-6 rounded-xl shadow-lg">
-                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
-                        <h3 class="font-bold text-gray-800 text-lg mb-4 sm:mb-0">Navigasi Soal</h3>
-                        <div class="flex items-center gap-4 w-full sm:w-auto">
-                            <div class="flex-1">
-                                <div class="flex justify-between items-center mb-1">
-                                    <h3 class="font-semibold text-gray-800 text-sm">Progress</h3>
-                                    <p class="text-xs text-gray-600">
-                                        <span id="currentQuestionNum">1</span> / <span id="totalQuestions">0</span>
-                                    </p>
-                                </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                    <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
-                                </div>
-                            </div>
-                            <button id="submitExamBtn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200 whitespace-nowrap">
-                                <i class="fas fa-flag-checkered mr-2"></i> Selesai
-                            </button>
+                <div class="mt-8 pt-6 border-t flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <button id="prevQuestionBtn" class="w-full sm:w-auto bg-gray-700 hover:bg-gray-800 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center">
+                        <i class="fas fa-chevron-left mr-2"></i> Soal Sebelumnya
+                    </button>
+                    <div class="w-full sm:w-1/3">
+                        <p class="text-center text-xs text-gray-500 mb-1">Progress</p>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full" style="width: 0%"></div>
                         </div>
                     </div>
-                    <div id="questionNavigation" class="flex items-center gap-3 overflow-x-auto pb-3 no-scrollbar">
-                        <!-- Navigation buttons will be rendered here -->
-                    </div>
-                </div>
-
-                <!-- Question Area -->
-                <div class="w-full bg-white p-8 rounded-xl shadow-lg">
-                    <div id="questionContent">
-                        <!-- Question will be rendered here -->
-                    </div>
-                    <div class="mt-8 pt-6 border-t flex justify-between items-center">
-                        <button id="prevQuestionBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center">
-                            <i class="fas fa-chevron-left mr-2"></i> Sebelumnya
-                        </button>
-                        <button id="nextQuestionBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center">
-                            Selanjutnya <i class="fas fa-chevron-right ml-2"></i>
-                        </button>
-                    </div>
+                    <button id="nextQuestionBtn" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition duration-200 flex items-center justify-center">
+                        Soal Selanjutnya <i class="fas fa-chevron-right ml-2"></i>
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Question List Modal (REMOVED) -->
+    <!-- Question List Modal -->
+    <div id="questionListModal" class="fixed inset-0 bg-black bg-opacity-50 modal-backdrop hidden flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 max-h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">Daftar Soal</h3>
+                <button id="closeQuestionListBtn" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="overflow-y-auto">
+                <div id="questionListModalContent" class="grid grid-cols-5 gap-2 sm:gap-4">
+                    <!-- Navigation buttons will be rendered here via JS -->
+                </div>
+            </div>
+            <div class="mt-6 pt-4 border-t flex justify-center items-center gap-4 text-sm flex-wrap">
+                <span class="flex items-center"><span class="w-4 h-4 rounded-full bg-green-500 mr-2"></span>Sudah dijawab</span>
+                <span class="flex items-center"><span class="w-4 h-4 rounded-full bg-blue-500 mr-2"></span>Dikerjakan</span>
+                <span class="flex items-center"><span class="w-4 h-4 rounded-full bg-gray-300 mr-2"></span>Belum dijawab</span>
+            </div>
+        </div>
+    </div>
 
     <script>
         // =================================================================
@@ -1912,6 +1908,14 @@
                 }, { once: true });
             },
 
+            showQuestionListModal() {
+                document.getElementById('questionListModal').classList.remove('hidden');
+            },
+
+            hideQuestionListModal() {
+                document.getElementById('questionListModal').classList.add('hidden');
+            },
+
             showLogin() {
                 document.getElementById('loginScreen').classList.remove('hidden');
                 document.getElementById('dashboardInterface').classList.add('hidden');
@@ -1965,8 +1969,9 @@
             },
 
             updateUserInfo() {
-                if (AppState.currentUser) {
-                    document.getElementById('examUserInfo').textContent = AppState.currentUser.nama;
+                const userInfoEl = document.getElementById('examUserInfo');
+                if (AppState.currentUser && userInfoEl) {
+                    userInfoEl.textContent = AppState.currentUser.nama;
                 }
             },
 
@@ -1996,13 +2001,13 @@
                 }
 
                 header.innerHTML = `
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
+                    <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div class="flex flex-col sm:flex-row items-center gap-4">
                             <h2 class="text-xl font-bold text-gray-800">SD IT NURUL KAUTSAR</h2>
-                            <nav id="headerNav" class="ml-10 flex items-center space-x-1 border-l pl-4">
+                            <nav id="headerNav" class="flex items-center space-x-1 sm:border-l sm:pl-4">
                                 ${navItems.map(item => `
-                                    <button class="px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 nav-item" data-view="${item.id}">
-                                        <i class="${item.icon} mr-2"></i>${item.label}
+                                    <button class="px-3 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 nav-item" data-view="${item.id}">
+                                        <i class="${item.icon} mr-1 sm:mr-2"></i><span class="hidden sm:inline">${item.label}</span>
                                     </button>
                                 `).join('')}
                             </nav>
@@ -2971,12 +2976,13 @@
             },
 
             setupQuestionNavigation() {
-                const navigation = document.getElementById('questionNavigation');
-                navigation.innerHTML = Array.from({ length: AppState.questions.length }, (_, i) => {
+                const navigationModal = document.getElementById('questionListModalContent');
+                if (!navigationModal) return;
+                navigationModal.innerHTML = Array.from({ length: AppState.questions.length }, (_, i) => {
                     let stateClass = 'unanswered';
                     if (i === AppState.currentQuestion) stateClass = 'current';
-                    else if (AppState.examAnswers[i] !== undefined) stateClass = 'answered';
-                    return `<button class="question-nav-btn w-12 h-12 rounded-full border-2 text-sm font-bold ${stateClass}" onclick="UI.goToQuestion(${i})">${i + 1}</button>`;
+                    else if (AppState.examAnswers[i] !== undefined && AppState.examAnswers[i] !== '') stateClass = 'answered';
+                    return `<button class="question-nav-btn w-12 h-12 rounded-full border-2 text-sm font-bold ${stateClass}" onclick="UI.goToQuestionFromModal(${i})">${i + 1}</button>`;
                 }).join('');
             },
 
@@ -2987,6 +2993,11 @@
                 this.renderQuestion();
                 this.updateQuestionNavigation();
                 this.updateProgress();
+            },
+
+            goToQuestionFromModal(index) {
+                this.goToQuestion(index);
+                this.hideQuestionListModal();
             },
 
             updateProgress() {
@@ -3246,11 +3257,15 @@
                 if (unansweredCount > 0) message += `\n\nAnda memiliki ${unansweredCount} soal yang belum dikerjakan.`;
                 UI.showConfirmModal('Konfirmasi Selesai Ujian', message, () => UI.submitExam());
             });
-            document.getElementById('logoutBtn').addEventListener('click', () => UI.showConfirmModal('Konfirmasi Keluar', 'Apakah Anda yakin ingin keluar dari ujian?', () => Auth.logout()));
             document.getElementById('dashboardLogoutBtn').addEventListener('click', () => UI.showConfirmModal('Konfirmasi Keluar', 'Apakah Anda yakin ingin keluar?', () => Auth.logout()));
             document.getElementById('closeModalBtn').addEventListener('click', () => UI.hideModal());
             document.getElementById('managementModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) UI.hideModal(); });
             
+            // Listener for Question List Modal
+            document.getElementById('questionListBtn').addEventListener('click', () => UI.showQuestionListModal());
+            document.getElementById('closeQuestionListBtn').addEventListener('click', () => UI.hideQuestionListModal());
+            document.getElementById('questionListModal').addEventListener('click', (e) => { if (e.target === e.currentTarget) UI.hideQuestionListModal(); });
+
             // Listener for the new Gemini modal
             const geminiModal = document.getElementById('geminiModal');
             if(geminiModal) {
