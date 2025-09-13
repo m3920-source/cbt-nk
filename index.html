@@ -1248,7 +1248,7 @@
                             semester: metadata.semester,
                             mataPelajaran: metadata.mataPelajaran,
                             kelas: metadata.kelas,
-                            kode: baseCode, // FIX: All generated questions share the same base code
+                            kode: baseCode, // FIX: All generated questions now share the same base code
                             tipe: q.tipe,
                             pertanyaan: q.pertanyaan,
                             pilihan: q.pilihan || [],
@@ -1750,6 +1750,7 @@
                     Buatkan soal-soal berikut: ${requestedTypes.join(', ')}.
 
                     Untuk Pilihan Ganda, berikan 4 pilihan dan tandai jawaban yang benar (correct) dengan indeks mulai dari 0.
+                    Untuk soal tipe 'isian' dan 'uraian', jangan sertakan properti "pilihan" dan "correct".
                     Untuk setiap soal, sertakan properti "tipe" dengan nilai 'pilihan_ganda', 'isian', atau 'uraian'.
                 `;
 
@@ -2307,13 +2308,13 @@
 
                 content.innerHTML = `
                     <div class="fade-in">
-                        <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                             <h2 class="text-2xl font-bold text-gray-900">Manajemen Soal</h2>
-                            <div class="flex items-center gap-2">
-                                <button onclick="Management.showAutoGenerateModal()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition duration-200"><i class="fas fa-magic mr-2"></i>✨ Buat Soal Otomatis</button>
-                                <button onclick="Management.deleteFilteredQuestions()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"><i class="fas fa-trash-alt mr-2"></i>Hapus Soal</button>
-                                <button onclick="Management.downloadQuestionsPDF()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"><i class="fas fa-download mr-2"></i>Download PDF</button>
-                                <button onclick="Management.showAddQuestionModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-200"><i class="fas fa-plus mr-2"></i>Tambah Soal</button>
+                            <div class="flex flex-wrap items-center justify-start sm:justify-end gap-2 w-full sm:w-auto">
+                                <button onclick="Management.showAutoGenerateModal()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition duration-200"><i class="fas fa-magic mr-2"></i>Buat Otomatis</button>
+                                <button onclick="Management.deleteFilteredQuestions()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"><i class="fas fa-trash-alt mr-2"></i>Hapus</button>
+                                <button onclick="Management.downloadQuestionsPDF()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"><i class="fas fa-download mr-2"></i>Download</button>
+                                <button onclick="Management.showAddQuestionModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition duration-200"><i class="fas fa-plus mr-2"></i>Tambah</button>
                             </div>
                         </div>
                         <div class="bg-white rounded-lg shadow p-6 mb-6"><div class="grid grid-cols-1 md:grid-cols-6 gap-4">
@@ -2550,9 +2551,9 @@
                 
                 content.innerHTML = `
                     <div class="fade-in">
-                        <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                             <h2 class="text-2xl font-bold text-gray-900">Hasil Ujian</h2>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center justify-start sm:justify-end gap-2 w-full sm:w-auto">
                                 <button onclick="Management.deleteFilteredResults()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"><i class="fas fa-trash-alt mr-2"></i>Hapus</button>
                                 <button onclick="Management.downloadResultsPDF()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"><i class="fas fa-download mr-2"></i>Download PDF</button>
                             </div>
@@ -2614,9 +2615,9 @@
 
                 content.innerHTML = `
                     <div class="fade-in">
-                        <div class="flex justify-between items-center mb-6 flex-wrap gap-2">
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                             <h2 class="text-2xl font-bold text-gray-900">Daftar Nilai</h2>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center justify-start sm:justify-end gap-2 w-full sm:w-auto">
                                 <button onclick="Management.deleteFilteredGrades()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"><i class="fas fa-trash-alt mr-2"></i>Hapus</button>
                                 <button onclick="Management.downloadGradesPDF()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"><i class="fas fa-download mr-2"></i>Download PDF</button>
                             </div>
