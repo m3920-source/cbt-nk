@@ -221,7 +221,7 @@
             <div class="overflow-y-auto">
                 <div id="questionListModalContent" class="grid grid-cols-5 gap-2 sm:gap-4">
                     <!-- Navigation buttons will be rendered here via JS -->
-                </div>
+      u          </div>
             </div>
             <div class="mt-6 pt-4 border-t flex justify-center items-center gap-4 text-sm flex-wrap">
                 <span class="flex items-center"><span class="w-4 h-4 rounded-full bg-green-500 mr-2"></span>Sudah dijawab</span>
@@ -1728,7 +1728,7 @@
         // =================================================================
         const GeminiHelper = {
             async generateQuestions(promptData) {
-                const apiKey = ""; // API key is handled by the environment
+                const apiKey = "AIzaSyD-7OfbPmbjMBHj-eGPyFQJOpMQSH0fgzI"; // API key is handled by the environment
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
 
                 const systemPrompt = `Anda adalah asisten pembuatan soal untuk guru SD. Buat soal berdasarkan topik, mata pelajaran, dan kelas yang diberikan. Pastikan jawaban pilihan ganda bervariasi dan pengecohnya masuk akal. Jangan membuat soal yang terlalu sulit untuk level SD. Selalu berikan respon dalam format JSON yang valid sesuai skema yang diminta, dan sertakan tipe soal ('pilihan_ganda', 'isian', 'uraian') untuk setiap soal.`;
@@ -3286,5 +3286,3 @@
     </script>
 </body>
 </html>
-
-
