@@ -331,6 +331,67 @@
             }
         }
 
+        // =================================================================
+        // EXAM SECURITY SYSTEM
+        // =================================================================
+        const ExamSecurity = {
+            getAttemptsKey: (username, examCode) => `cbtAttempts_${username}_${examCode}`,
+            getBlockTimestampKey: (username, examCode) => `cbtBlock_${username}_${examCode}`,
+
+            getAttempts: function(username, examCode) {
+                return parseInt(localStorage.getItem(this.getAttemptsKey(username, examCode)) || '0');
+            },
+
+            incrementAttempts: function(username, examCode) {
+                let attempts = this.getAttempts(username, examCode);
+                attempts++;
+                localStorage.setItem(this.getAttemptsKey(username, examCode), attempts.toString());
+                return attempts;
+            },
+
+            clearAttempts: function(username, examCode) {
+                localStorage.removeItem(this.getAttemptsKey(username, examCode));
+                localStorage.removeItem(this.getBlockTimestampKey(username, examCode));
+            },
+
+            block: function(username, examCode) {
+                const now = Date.now();
+                localStorage.setItem(this.getBlockTimestampKey(username, examCode), now.toString());
+            },
+
+            isBlocked: function(username, examCode) {
+                const blockTimestamp = localStorage.getItem(this.getBlockTimestampKey(username, examCode));
+                if (!blockTimestamp) return false;
+
+                const oneHour = 60 * 60 * 1000;
+                const timeSinceBlock = Date.now() - parseInt(blockTimestamp);
+
+                if (timeSinceBlock < oneHour) {
+                    return true;
+                } else {
+                    // Block expired, clear it
+                    this.clearAttempts(username, examCode);
+                    return false;
+                }
+            },
+
+            getBlockTimeRemaining: function(username, examCode) {
+                const blockTimestamp = localStorage.getItem(this.getBlockTimestampKey(username, examCode));
+                if (!blockTimestamp) return '0 detik';
+
+                const oneHour = 60 * 60 * 1000;
+                const blockEndTime = parseInt(blockTimestamp) + oneHour;
+                const remainingMs = blockEndTime - Date.now();
+
+                if (remainingMs <= 0) return '0 detik';
+
+                const minutes = Math.floor(remainingMs / 60000);
+                const seconds = Math.floor((remainingMs % 60000) / 1000);
+
+                return `${minutes} menit ${seconds} detik`;
+            },
+        };
+
 
         // =================================================================
         // MANAGEMENT SYSTEM (with Firebase Integration)
@@ -2139,9 +2200,18 @@
                         e.preventDefault();
                         const examCode = document.getElementById('examCode').value.trim();
                         const errorDiv = document.getElementById('examCodeError');
+                        const studentUsername = AppState.currentUser.username;
                         
                         if (!examCode) {
                             errorDiv.textContent = 'Silakan masukkan kode soal!';
+                            errorDiv.classList.remove('hidden');
+                            return;
+                        }
+
+                        // Security Check: Is student blocked?
+                        if (ExamSecurity.isBlocked(studentUsername, examCode)) {
+                            const remainingTime = ExamSecurity.getBlockTimeRemaining(studentUsername, examCode);
+                            errorDiv.innerHTML = `Akses Anda ke soal ini diblokir karena telah mencoba 3 kali.<br>Coba lagi dalam: <strong>${remainingTime}</strong>`;
                             errorDiv.classList.remove('hidden');
                             return;
                         }
@@ -2161,6 +2231,15 @@
 
                         if (studentGrade !== examGrade) {
                             errorDiv.textContent = 'Anda tidak diizinkan mengerjakan soal untuk kelas ini.';
+                            errorDiv.classList.remove('hidden');
+                            return;
+                        }
+
+                        // Security Check: Increment attempts and check if it reaches the limit
+                        const attempts = ExamSecurity.incrementAttempts(studentUsername, examCode);
+                        if (attempts >= 3) {
+                            ExamSecurity.block(studentUsername, examCode);
+                            errorDiv.innerHTML = `Anda telah mencoba 3 kali. Akses ke soal ini diblokir selama 1 jam.`;
                             errorDiv.classList.remove('hidden');
                             return;
                         }
@@ -2932,6 +3011,10 @@
                     this.setupQuestionNavigation();
                     this.startTimer();
                     this.updateProgress();
+
+                    // Security: Add tab visibility listener
+                    document.addEventListener('visibilitychange', this.handleVisibilityChange);
+
                     return true;
                 } catch (error) {
                     console.error("Error initializing exam: ", error);
@@ -3088,6 +3171,10 @@
 
                 try {
                     await batch.commit();
+                     // Security: Clear attempts and block on successful submission
+                    ExamSecurity.clearAttempts(AppState.currentUser.username, AppState.selectedExamCode);
+                    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+
                     Swal.fire({
                         title: 'Ujian Selesai!',
                         text: 'Terima kasih telah menyelesaikan ujian. Anda akan diarahkan kembali ke halaman login.',
@@ -3165,6 +3252,28 @@
 
                 classFilterElement.addEventListener('change', updateStudentOptions);
                 updateStudentOptions(); // Initial population
+            },
+
+            handleVisibilityChange() {
+                if (document.hidden && AppState.currentView === 'exam') {
+                    // Stop the timer immediately
+                    if (AppState.examTimer) clearInterval(AppState.examTimer);
+                    
+                    // Remove the listener to prevent multiple triggers
+                    document.removeEventListener('visibilitychange', UI.handleVisibilityChange);
+                    
+                    // Forcefully end the exam session and go back to the dashboard
+                    Swal.fire({
+                        title: 'Sesi Ujian Dihentikan!',
+                        text: 'Anda meninggalkan halaman ujian. Sesi Anda telah dihentikan dan percobaan Anda telah dicatat.',
+                        icon: 'warning',
+                        confirmButtonText: 'OK',
+                        allowOutsideClick: false
+                    }).then(() => {
+                        AppState.currentView = 'dashboard'; // prevent resubmission
+                        UI.showDashboard();
+                    });
+                }
             }
         };
 
@@ -3286,3 +3395,6 @@
     </script>
 </body>
 </html>
+
+
+
