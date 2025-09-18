@@ -2237,9 +2237,9 @@
 
                         // Security Check: Increment attempts and check if it reaches the limit
                         const attempts = ExamSecurity.incrementAttempts(studentUsername, examCode);
-                        if (attempts >= 3) {
+                        if (attempts >= 4) {
                             ExamSecurity.block(studentUsername, examCode);
-                            errorDiv.innerHTML = `Anda telah mencoba 3 kali. Akses ke soal ini diblokir selama 1 jam.`;
+                            errorDiv.innerHTML = `Anda telah mencoba 4 kali. Akses ke soal ini diblokir selama 1 jam.`;
                             errorDiv.classList.remove('hidden');
                             return;
                         }
