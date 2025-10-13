@@ -1606,7 +1606,7 @@
 
                 doc.text("Laporan Daftar Soal", 14, 16);
                 doc.setFontSize(10);
-                doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+                doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
 
                 const tableColumn = ["No", "Kode Soal", "Kelas", "Mata Pelajaran", "Tipe", "Pertanyaan"];
                 const tableRows = [];
@@ -1649,7 +1649,7 @@
                 const doc = new jsPDF();
                 doc.text("Laporan Hasil Ujian", 14, 16);
                 doc.setFontSize(10);
-                doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+                doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
 
                 const tableColumn = ["No", "Kelas", "Kode Soal", "Nama Siswa", "No. Soal", "Status", "Nilai"];
                 const tableRows = [];
@@ -1673,7 +1673,7 @@
                 const doc = new jsPDF();
                 doc.text("Laporan Daftar Nilai", 14, 16);
                 doc.setFontSize(10);
-                doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+                doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
 
                 const tableColumn = ["No", "Kelas", "Nama Siswa", "Kode Soal", "Mata Pelajaran", "Nilai", "Grade", "Keterangan"];
                 const tableRows = [];
