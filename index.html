@@ -1603,6 +1603,7 @@
             async downloadQuestionsPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
+				const { tahunAjaran, semester } = AppState.filters.questions; // atau filters.results / filters.grades sesuai konteks
 
                 doc.text("Laporan Daftar Soal", 14, 16);
                 doc.setFontSize(10);
@@ -1647,6 +1648,7 @@
             async downloadResultsPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
+				const { tahunAjaran, semester } = AppState.filters.questions; // atau filters.results / filters.grades sesuai konteks
                 doc.text("Laporan Hasil Ujian", 14, 16);
                 doc.setFontSize(10);
                 doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
@@ -1671,6 +1673,7 @@
             async downloadGradesPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
+				const { tahunAjaran, semester } = AppState.filters.questions; // atau filters.results / filters.grades sesuai konteks
                 doc.text("Laporan Daftar Nilai", 14, 16);
                 doc.setFontSize(10);
                 doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
@@ -3395,6 +3398,3 @@
     </script>
 </body>
 </html>
-
-
-
