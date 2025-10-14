@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="id">
 <head>
@@ -2182,11 +2183,7 @@
                     Kunci Jawaban: "${correctAnswer}"
                     Jawaban Siswa: "${studentAnswer}"
 
-                    Berdasarkan perbandingan, tentukan akurasi jawaban siswa.
-                    - Jika jawaban siswa sama sekali tidak relevan atau salah total, berikan nilai 0.
-                    - Jika jawaban siswa memiliki sedikit kebenaran tetapi sebagian besar salah, berikan nilai 50.
-                    - Jika jawaban siswa sebagian besar sudah benar tetapi ada sedikit kekurangan, berikan nilai 75.
-                    - Jika jawaban siswa benar sepenuhnya atau sangat akurat, berikan nilai 100.
+                    Berdasarkan perbandingan, berikan nilai antara 0 dan 100 untuk jawaban siswa. 0 berarti salah total, dan 100 berarti benar sepenuhnya. Anda dapat memberikan nilai di antara rentang tersebut (misalnya 0, 10, 15, 20, 25, 30, dan seterusnya hingga 100) tergantung pada tingkat keakuratan dan kelengkapan jawaban siswa.
 
                     Berikan juga feedback singkat dan jelas mengenai kenapa nilai tersebut diberikan.
                 `;
@@ -2230,10 +2227,12 @@
                     if (candidate && candidate.content?.parts?.[0]?.text) {
                         const jsonText = candidate.content.parts[0].text;
                         const parsedResult = JSON.parse(jsonText);
-                        // Ensure score is one of the allowed values
-                        if (![0, 50, 75, 100].includes(parsedResult.nilai)) {
+                        // Ensure score is between 0 and 100
+                        if (typeof parsedResult.nilai !== 'number' || parsedResult.nilai < 0 || parsedResult.nilai > 100) {
                             console.warn("AI returned an invalid score, defaulting to 0.", parsedResult.nilai);
                             parsedResult.nilai = 0; // Default to 0 if invalid value
+                        } else {
+                            parsedResult.nilai = Math.round(parsedResult.nilai);
                         }
                         return parsedResult;
                     } else {
@@ -3561,7 +3560,7 @@
 
                     Swal.fire({
                         title: 'Ujian Selesai!',
-                        html: `Terima kasih telah menyelesaikan ujian.<br>Nilai akhir Anda adalah: <strong>${finalScore}</strong><br>Anda akan diarahkan kembali ke halaman login.`,
+                        html: `Terima kasih telah menyelesaikan ujian.<br>Anda akan diarahkan kembali ke halaman login.`,
                         icon: 'success',
                         confirmButtonText: 'OK',
                         allowOutsideClick: false
