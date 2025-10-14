@@ -3348,8 +3348,8 @@
                 if (AppState.examTimer) clearInterval(AppState.examTimer);
 
                 Swal.fire({
-                    title: 'Sedang Memproses Jawaban...',
-                    html: 'Mohon tunggu, jawaban Anda sedang dinilai.<br>Proses ini mungkin memakan waktu beberapa saat.',
+                    title: 'Sedang Menyimpan Jawaban...',
+                    html: 'Mohon tunggu, jawaban Anda sedang disimpan.',
                     allowOutsideClick: false,
                     didOpen: () => {
                         Swal.showLoading();
@@ -3364,6 +3364,7 @@
 
                 let totalScore = 0;
                 const batch = db.batch();
+                const hasEssayOrFill = AppState.questions.some(q => q.type === 'fill' || q.type === 'essay');
 
                 for (const [index, question] of AppState.questions.entries()) {
                     const userAnswer = AppState.examAnswers[index] !== undefined ? String(AppState.examAnswers[index]) : 'Tidak dijawab';
@@ -3376,25 +3377,8 @@
                             status = 'benar';
                         }
                     } else { // Handles 'fill' and 'essay'
-                        if (question.correctAnswer) {
-                            try {
-                                const gradingResult = await GeminiHelper.gradeAnswer(question.question, question.correctAnswer, userAnswer);
-                                if (gradingResult) {
-                                    point = gradingResult.nilai;
-                                    status = point > 0 ? 'benar' : 'salah';
-                                } else {
-                                    point = 0;
-                                    status = 'perlu dinilai';
-                                }
-                            } catch (e) {
-                                console.error(`AI grading failed for question ${index + 1}:`, e);
-                                point = 0;
-                                status = 'perlu dinilai'; // Fallback
-                            }
-                        } else {
-                            point = 0;
-                            status = 'perlu dinilai'; // No answer key
-                        }
+                        point = 0;
+                        status = 'perlu dinilai';
                     }
                     totalScore += point;
 
@@ -3439,7 +3423,9 @@
 
                     Swal.fire({
                         title: 'Ujian Selesai!',
-                        html: `Terima kasih telah menyelesaikan ujian.<br>Nilai akhir Anda adalah: <strong>${finalScore}</strong><br>Anda akan diarahkan kembali ke halaman login.`,
+                        html: hasEssayOrFill
+                            ? `Terima kasih telah menyelesaikan ujian.<br>Jawaban Anda telah berhasil dikirim. Nilai akhir akan tersedia setelah guru selesai memeriksa.<br>Anda akan diarahkan kembali ke halaman login.`
+                            : `Terima kasih telah menyelesaikan ujian.<br>Nilai akhir Anda adalah: <strong>${finalScore}</strong><br>Anda akan diarahkan kembali ke halaman login.`,
                         icon: 'success',
                         confirmButtonText: 'OK',
                         allowOutsideClick: false
@@ -3453,7 +3439,6 @@
                     });
                 }
             },
-
 
             showNotification(message, type = 'error') {
                 const Toast = Swal.mixin({
