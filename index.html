@@ -44,6 +44,17 @@
             scrollbar-width: none;  /* Firefox */
         }
     </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.24.0",
+    "react-image-crop": "https://aistudiocdn.com/react-image-crop@^11.0.10"
+  }
+}
+</script>
 </head>
 <body class="bg-gray-50 font-sans">
     <!-- Login Screen -->
@@ -264,9 +275,9 @@
             selectedExamCode: null,
             lastQuestionData: { semester: '', tahunAjaran: '' }, // To store last used question data for teacher
             filters: {
-                questions: { kelas: '', mataPelajaran: '', kode: '', tahunAjaran: '', semester: '' },
-                results: { kodesoal: '', mataPelajaran: '', kelas: '', namaLengkap: '', tahunAjaran: '', semester: '' },
-                grades: { kodeSoal: '', mataPelajaran: '', kelas: '', namaSiswa: '', tahunAjaran: '', semester: '' }
+                questions: { kelas: '', mataPelajaran: '', kode: '' },
+                results: { kodesoal: '', mataPelajaran: '', kelas: '', namaLengkap: '' },
+                grades: { kodeSoal: '', mataPelajaran: '', kelas: '', namaSiswa: '' }
             },
             currentlyDisplayed: {
                 questions: [],
@@ -764,7 +775,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Tipe Soal</label>
-                            <select id="questionTypeSelect" name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="this.value === 'pilihan_ganda' ? document.getElementById('pilihanField').classList.remove('hidden') : document.getElementById('pilihanField').classList.add('hidden')">
+                            <select id="questionTypeSelect" name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="const type = this.value; document.getElementById('pilihanField').classList.toggle('hidden', type !== 'pilihan_ganda'); document.getElementById('jawabanTeksField').classList.toggle('hidden', type === 'pilihan_ganda' || type === '');">
                                 <option value="">Pilih Tipe Soal</option>
                                 <option value="pilihan_ganda" ${lastData.tipe === 'pilihan_ganda' ? 'selected' : ''}>Pilihan Ganda</option>
                                 <option value="isian" ${lastData.tipe === 'isian' ? 'selected' : ''}>Isian</option>
@@ -793,6 +804,10 @@
                                 <option value="2">C</option>
                                 <option value="3">D</option>
                             </select>
+                        </div>
+                        <div id="jawabanTeksField" class="hidden">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Jawaban Benar</label>
+                            <textarea name="jawabanBenarTeks" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Masukkan jawaban yang benar untuk soal isian/uraian"></textarea>
                         </div>
                         <div class="flex justify-end space-x-2 pt-4">
                             <button type="button" onclick="UI.hideModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800">Batal</button>
@@ -835,6 +850,9 @@
                         delete questionData.pilihan3;
                         delete questionData.pilihan4;
                         delete questionData.jawabanBenar;
+                    } else if (questionData.tipe === 'isian' || questionData.tipe === 'uraian') {
+                        questionData.jawabanBenar = questionData.jawabanBenarTeks;
+                        delete questionData.jawabanBenarTeks;
                     }
                     
                     try {
@@ -884,6 +902,13 @@
                                         </li>
                                     `).join('')}
                                 </ul>
+                            </div>
+                        `;
+                    } else if ((question.tipe === 'isian' || question.tipe === 'uraian') && question.jawabanBenar) {
+                        optionsHtml = `
+                            <div class="mt-4">
+                                <h5 class="font-semibold text-gray-700 mb-2">Kunci Jawaban:</h5>
+                                <p class="p-4 bg-green-50 rounded-md border text-green-800">${question.jawabanBenar}</p>
                             </div>
                         `;
                     }
@@ -990,7 +1015,7 @@
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Tipe Soal</label>
-                                <select name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="this.value === 'pilihan_ganda' ? document.getElementById('editPilihanField').classList.remove('hidden') : document.getElementById('editPilihanField').classList.add('hidden')">
+                                <select name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="const type = this.value; document.getElementById('editPilihanField').classList.toggle('hidden', type !== 'pilihan_ganda'); document.getElementById('editJawabanTeksField').classList.toggle('hidden', type === 'pilihan_ganda' || type === '');">
                                     <option value="pilihan_ganda" ${question.tipe === 'pilihan_ganda' ? 'selected' : ''}>Pilihan Ganda</option>
                                     <option value="isian" ${question.tipe === 'isian' ? 'selected' : ''}>Isian</option>
                                     <option value="uraian" ${question.tipe === 'uraian' ? 'selected' : ''}>Uraian</option>
@@ -1021,6 +1046,10 @@
                                     <option value="2" ${question.correct === 2 ? 'selected' : ''}>C</option>
                                     <option value="3" ${question.correct === 3 ? 'selected' : ''}>D</option>
                                 </select>
+                            </div>
+                            <div id="editJawabanTeksField" class="${question.tipe === 'isian' || question.tipe === 'uraian' ? '' : 'hidden'}">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Jawaban Benar</label>
+                                <textarea name="jawabanBenarTeks" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">${question.jawabanBenar || ''}</textarea>
                             </div>
                             <div class="flex justify-end space-x-2 pt-4">
                                 <button type="button" onclick="UI.hideModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800">Batal</button>
@@ -1059,11 +1088,17 @@
                                 questionData.pilihan1, questionData.pilihan2, questionData.pilihan3, questionData.pilihan4
                             ].filter(p => p);
                             questionData.correct = parseInt(questionData.jawabanBenar);
+                            questionData.jawabanBenar = null; // Clear text answer
                             delete questionData.pilihan1;
                             delete questionData.pilihan2;
                             delete questionData.pilihan3;
                             delete questionData.pilihan4;
-                            delete questionData.jawabanBenar;
+                            delete questionData.jawabanBenarTeks;
+                        } else if (questionData.tipe === 'isian' || questionData.tipe === 'uraian') {
+                            questionData.jawabanBenar = questionData.jawabanBenarTeks;
+                            questionData.pilihan = []; // Clear choices
+                            questionData.correct = null; // Clear correct choice
+                            delete questionData.jawabanBenarTeks;
                         }
                         
                         try {
@@ -1278,13 +1313,16 @@
             renderGeneratedQuestions(questions, metadata, container) {
                 let html = '<h3 class="text-lg font-bold mb-4">Hasil Soal yang Dibuat:</h3>';
                 html += questions.map((q, index) => {
-                    let optionsHtml = '';
+                    let answerHtml = '';
                     if(q.pilihan && q.pilihan.length > 0) {
-                        optionsHtml = `<ul class="list-disc list-inside space-y-1 pl-4 mt-2">${q.pilihan.map((opt, i) => `<li class="${i === q.correct ? 'font-bold text-green-700' : ''}">${opt}</li>`).join('')}</ul>`;
+                        answerHtml = `<ul class="list-disc list-inside space-y-1 pl-4 mt-2">${q.pilihan.map((opt, i) => `<li class="${i === q.correct ? 'font-bold text-green-700' : ''}">${opt} ${i === q.correct ? '<span class="text-green-600 font-normal">(Jawaban Benar)</span>' : ''}</li>`).join('')}</ul>`;
+                    } else if (q.jawabanBenar) {
+                        answerHtml = `<div class="mt-2 p-2 bg-green-50 border border-green-200 rounded-md"><p class="text-sm text-green-800"><strong>Kunci Jawaban:</strong> ${q.jawabanBenar}</p></div>`;
                     }
+
                     return `<div class="p-4 border rounded-lg mb-3 bg-gray-50">
                                 <p class="font-semibold">${index + 1}. ${q.pertanyaan}</p>
-                                ${optionsHtml}
+                                ${answerHtml}
                             </div>`;
                 }).join('');
 
@@ -1309,11 +1347,12 @@
                             semester: metadata.semester,
                             mataPelajaran: metadata.mataPelajaran,
                             kelas: metadata.kelas,
-                            kode: baseCode, // FIX: All generated questions now share the same base code
+                            kode: baseCode, // All generated questions share the same base code
                             tipe: q.tipe,
                             pertanyaan: q.pertanyaan,
                             pilihan: q.pilihan || [],
                             correct: (q.correct !== undefined && q.correct !== null) ? q.correct : null,
+                            jawabanBenar: q.jawabanBenar || null,
                             gambar: null,
                             createdBy: AppState.currentUser.nama,
                             createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -1399,14 +1438,23 @@
                         });
 
                         // Firebase Integration: Recalculate final grade
+                        const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', result.kodesoal).get();
+                        const totalQuestionsForExam = questionsSnapshot.size;
+
                         const studentResultsSnapshot = await db.collection('examResults')
                             .where('namaLengkap', '==', result.namaLengkap)
                             .where('kodesoal', '==', result.kodesoal)
                             .get();
                         
                         const studentResults = studentResultsSnapshot.docs.map(doc => doc.data());
-                        const totalScore = studentResults.reduce((sum, r) => sum + r.nilai, 0);
-                        const finalScore = Math.round(totalScore / studentResults.length);
+                        let totalScore = 0;
+                        studentResults.forEach(r => {
+                            if (r.status !== 'perlu dinilai') {
+                                totalScore += r.nilai;
+                            }
+                        });
+                        
+                        const finalScore = totalQuestionsForExam > 0 ? Math.round(totalScore / totalQuestionsForExam) : 0;
                         const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
                         
                         // Firebase Integration: Find and update the summary grade
@@ -1455,7 +1503,28 @@
 
                 resultsTableBody.innerHTML = results.length === 0 ?
                     '<tr><td colspan="10" class="px-6 py-4 text-center text-gray-500">Tidak ada hasil ujian yang sesuai dengan filter</td></tr>' :
-                    results.map((result, index) => `
+                    results.map((result, index) => {
+                        let actionButtons = '';
+                        if (result.status === 'perlu dinilai') {
+                            actionButtons = `
+                                <button id="grade-btn-${result.id}" onclick="Management.gradeWithAI('${result.id}')" class="bg-purple-600 text-white px-3 py-2 rounded-md hover:bg-purple-700 text-xs">
+                                    <i class="fas fa-magic mr-1"></i> Nilai AI
+                                </button>
+                            `;
+                        } else {
+                            actionButtons = `
+                                <button onclick="Management.viewResult('${result.id}')" class="text-blue-600 hover:text-blue-900 mr-3">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button onclick="Management.editResult('${result.id}')" class="text-green-600 hover:text-green-900 mr-3">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button onclick="Management.deleteResult('${result.id}')" class="text-red-600 hover:text-red-900">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            `;
+                        }
+                        return `
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${result.kelas}</td>
@@ -1469,18 +1538,103 @@
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${result.nilai}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                <button onclick="Management.viewResult('${result.id}')" class="text-blue-600 hover:text-blue-900 mr-3">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                                <button onclick="Management.editResult('${result.id}')" class="text-green-600 hover:text-green-900 mr-3">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <button onclick="Management.deleteResult('${result.id}')" class="text-red-600 hover:text-red-900">
-                                    <i class="fas fa-trash"></i>
-                                </button>
+                                ${actionButtons}
                             </td>
                         </tr>
-                    `).join('');
+                    `}).join('');
+            },
+            
+            async gradeWithAI(id) {
+                const button = document.getElementById(`grade-btn-${id}`);
+                if (!button) return;
+
+                button.disabled = true;
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menilai...';
+
+                try {
+                    // 1. Get result data
+                    const resultDoc = await db.collection('examResults').doc(id).get();
+                    if (!resultDoc.exists) throw new Error("Data hasil ujian tidak ditemukan.");
+                    const resultData = { id: resultDoc.id, ...resultDoc.data() };
+
+                    // 2. Get the corresponding question to find the correct answer
+                    const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', resultData.kodesoal).get();
+                    if (questionsSnapshot.empty) throw new Error("Data soal tidak ditemukan.");
+                    
+                    let questions = questionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    // Sort questions exactly like in the exam initialization
+                    const typeOrder = { 'pilihan_ganda': 1, 'isian': 2, 'uraian': 3 };
+                    questions.sort((a, b) => {
+                        const typeA = typeOrder[a.tipe] || 99;
+                        const typeB = typeOrder[b.tipe] || 99;
+                        if (typeA !== typeB) return typeA - typeB;
+                        const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
+                        const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
+                        return timeA - timeB;
+                    });
+
+                    const question = questions[resultData.noSoal - 1];
+                    if (!question || !question.jawabanBenar) {
+                        throw new Error(`Kunci jawaban untuk soal no. ${resultData.noSoal} tidak ditemukan.`);
+                    }
+                    
+                    // 3. Call Gemini to grade
+                    const gradingResult = await GeminiHelper.gradeAnswer(question.pertanyaan, question.jawabanBenar, resultData.jawabanSiswa);
+
+                    if (!gradingResult) {
+                        throw new Error("Gagal mendapatkan nilai dari AI.");
+                    }
+                    
+                    const newNilai = gradingResult.nilai;
+                    const newStatus = newNilai > 0 ? 'benar' : 'salah';
+
+                    // 4. Update the individual result
+                    await db.collection('examResults').doc(id).update({
+                        nilai: newNilai,
+                        status: newStatus
+                    });
+                    
+                    // 5. Recalculate final grade
+                    const studentResultsSnapshot = await db.collection('examResults')
+                        .where('namaLengkap', '==', resultData.namaLengkap)
+                        .where('kodesoal', '==', resultData.kodesoal)
+                        .get();
+                    
+                    const studentResults = studentResultsSnapshot.docs.map(doc => doc.data());
+                    let totalScore = 0;
+                    studentResults.forEach(r => {
+                        if (r.status !== 'perlu dinilai') {
+                            totalScore += r.nilai;
+                        }
+                    });
+
+                    const totalQuestionsForExam = questions.length;
+                    const finalScore = totalQuestionsForExam > 0 ? Math.round(totalScore / totalQuestionsForExam) : 0;
+                    const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
+
+                    const gradeQuery = await db.collection('grades')
+                        .where('namaSiswa', '==', resultData.namaLengkap)
+                        .where('kodeSoal', '==', resultData.kodesoal)
+                        .limit(1).get();
+
+                    if (!gradeQuery.empty) {
+                        const gradeDocId = gradeQuery.docs[0].id;
+                        await db.collection('grades').doc(gradeDocId).update({
+                            nilai: finalScore,
+                            grade: grade,
+                            keterangan: finalScore >= 70 ? 'Lulus' : 'Tidak Lulus'
+                        });
+                    }
+                    
+                    UI.showNotification(`Penilaian berhasil! Nilai: ${newNilai}. Feedback: ${gradingResult.feedback}`, 'success');
+                    
+                } catch (error) {
+                    console.error("Error during AI grading: ", error);
+                    UI.showNotification(error.message, 'error');
+                } finally {
+                    document.getElementById('applyResultFilterBtn').click();
+                }
             },
 
             // =================================================================
@@ -1603,12 +1757,10 @@
             async downloadQuestionsPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
-				const { tahunAjaran, semester } = AppState.filters.questions; // atau filters.results / filters.grades sesuai konteks
 
-				doc.setFontSize(12);
                 doc.text("Laporan Daftar Soal", 14, 16);
                 doc.setFontSize(10);
-                doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+                doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
 
                 const tableColumn = ["No", "Kode Soal", "Kelas", "Mata Pelajaran", "Tipe", "Pertanyaan"];
                 const tableRows = [];
@@ -1649,12 +1801,9 @@
             async downloadResultsPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
-				const { tahunAjaran, semester } = AppState.filters.questions; // atau filters.results / filters.grades sesuai konteks
-				
-				doc.setFontSize(12);
                 doc.text("Laporan Hasil Ujian", 14, 16);
                 doc.setFontSize(10);
-                doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+                doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
 
                 const tableColumn = ["No", "Kelas", "Kode Soal", "Nama Siswa", "No. Soal", "Status", "Nilai"];
                 const tableRows = [];
@@ -1676,12 +1825,9 @@
             async downloadGradesPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
-				const { tahunAjaran, semester } = AppState.filters.questions; // atau filters.results / filters.grades sesuai konteks
-				
-				doc.setFontSize(12);
                 doc.text("Laporan Daftar Nilai", 14, 16);
                 doc.setFontSize(10);
-                doc.text(`Berdasarkan Tahun Pelajaran: ${tahunAjaran || '-'} — Semester: ${semester || '-'} — Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+                doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
 
                 const tableColumn = ["No", "Kelas", "Nama Siswa", "Kode Soal", "Mata Pelajaran", "Nilai", "Grade", "Keterangan"];
                 const tableRows = [];
@@ -1819,7 +1965,7 @@
                     Buatkan soal-soal berikut: ${requestedTypes.join(', ')}.
 
                     Untuk Pilihan Ganda, berikan 4 pilihan dan tandai jawaban yang benar (correct) dengan indeks mulai dari 0.
-                    Untuk soal tipe 'isian' dan 'uraian', jangan sertakan properti "pilihan" dan "correct".
+                    Untuk soal tipe 'isian' dan 'uraian', sertakan properti "jawabanBenar" dengan kunci jawaban yang benar dan akurat. Jangan sertakan properti "pilihan" dan "correct" untuk tipe ini.
                     Untuk setiap soal, sertakan properti "tipe" dengan nilai 'pilihan_ganda', 'isian', atau 'uraian'.
                 `;
 
@@ -1843,7 +1989,8 @@
                                         type: "ARRAY",
                                         items: { type: "STRING" }
                                     },
-                                    correct: { type: "NUMBER" }
+                                    correct: { type: "NUMBER" },
+                                    jawabanBenar: { type: "STRING" }
                                 },
                                 required: ["tipe", "pertanyaan"]
                             }
@@ -1875,6 +2022,81 @@
                     }
                 } catch (error) {
                     console.error('Error calling Gemini API:', error);
+                    return null;
+                }
+            },
+            
+            async gradeAnswer(questionText, correctAnswer, studentAnswer) {
+                const apiKey = "AIzaSyD-7OfbPmbjMBHj-eGPyFQJOpMQSH0fgzI";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                
+                const systemPrompt = "Anda adalah seorang guru ahli yang memeriksa jawaban ujian. Tugas Anda adalah menilai jawaban siswa berdasarkan pertanyaan dan kunci jawaban yang diberikan. Berikan respons HANYA dalam format JSON yang valid.";
+
+                const userQuery = `
+                    Tolong nilai jawaban siswa berikut.
+                    Pertanyaan: "${questionText}"
+                    Kunci Jawaban: "${correctAnswer}"
+                    Jawaban Siswa: "${studentAnswer}"
+
+                    Berdasarkan perbandingan, tentukan akurasi jawaban siswa.
+                    - Jika jawaban siswa sama sekali tidak relevan atau salah total, berikan nilai 0.
+                    - Jika jawaban siswa memiliki sedikit kebenaran tetapi sebagian besar salah, berikan nilai 50.
+                    - Jika jawaban siswa sebagian besar sudah benar tetapi ada sedikit kekurangan, berikan nilai 75.
+                    - Jika jawaban siswa benar sepenuhnya atau sangat akurat, berikan nilai 100.
+
+                    Berikan juga feedback singkat dan jelas mengenai kenapa nilai tersebut diberikan.
+                `;
+                
+                const payload = {
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    contents: [{
+                        parts: [{ text: userQuery }]
+                    }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                nilai: { type: "NUMBER" },
+                                feedback: { type: "STRING" }
+                            },
+                            required: ["nilai", "feedback"]
+                        }
+                    }
+                };
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.json();
+                        console.error('Gemini API Grading Error:', errorBody);
+                        throw new Error(`API request failed with status ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+
+                    if (candidate && candidate.content?.parts?.[0]?.text) {
+                        const jsonText = candidate.content.parts[0].text;
+                        const parsedResult = JSON.parse(jsonText);
+                        // Ensure score is one of the allowed values
+                        if (![0, 50, 75, 100].includes(parsedResult.nilai)) {
+                            console.warn("AI returned an invalid score, defaulting to 0.", parsedResult.nilai);
+                            parsedResult.nilai = 0; // Default to 0 if invalid value
+                        }
+                        return parsedResult;
+                    } else {
+                        throw new Error("Invalid response structure from Gemini API for grading.");
+                    }
+                } catch (error) {
+                    console.error('Error calling Gemini API for grading:', error);
                     return null;
                 }
             }
@@ -3007,6 +3229,7 @@
                         question: q.pertanyaan,
                         options: q.pilihan || [],
                         correct: q.correct,
+                        correctAnswer: q.jawabanBenar || null, // Added for isian/uraian
                         gambar: q.gambar || null
                     }));
                     
@@ -3117,7 +3340,16 @@
 
             async submitExam() {
                 if (AppState.examTimer) clearInterval(AppState.examTimer);
-                
+
+                Swal.fire({
+                    title: 'Sedang Memproses Jawaban...',
+                    html: 'Mohon tunggu, jawaban Anda sedang dinilai.<br>Proses ini mungkin memakan waktu beberapa saat.',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
                 const examDetailsSnapshot = await db.collection('examQuestions').where('kode', '==', AppState.selectedExamCode).limit(1).get();
                 const firstQuestionData = !examDetailsSnapshot.empty ? examDetailsSnapshot.docs[0].data() : {};
                 const mataPelajaran = firstQuestionData.mataPelajaran || 'Tidak diketahui';
@@ -3125,24 +3357,41 @@
                 const tahunAjaran = firstQuestionData.tahunAjaran || 'Tidak diketahui';
 
                 let totalScore = 0;
-                // Firebase Integration: Use batch write for atomicity
                 const batch = db.batch();
 
-                AppState.questions.forEach((question, index) => {
-                    const userAnswer = AppState.examAnswers[index];
+                for (const [index, question] of AppState.questions.entries()) {
+                    const userAnswer = AppState.examAnswers[index] !== undefined ? String(AppState.examAnswers[index]) : 'Tidak dijawab';
                     let point = 0;
                     let status = 'salah';
 
                     if (question.type === 'multiple') {
-                        if (question.correct !== undefined && userAnswer === question.correct) {
+                        if (question.correct !== undefined && AppState.examAnswers[index] === question.correct) {
                             point = 100;
                             status = 'benar';
                         }
-                    } else {
-                        status = 'perlu dinilai';
+                    } else { // Handles 'fill' and 'essay'
+                        if (question.correctAnswer) {
+                            try {
+                                const gradingResult = await GeminiHelper.gradeAnswer(question.question, question.correctAnswer, userAnswer);
+                                if (gradingResult) {
+                                    point = gradingResult.nilai;
+                                    status = point > 0 ? 'benar' : 'salah';
+                                } else {
+                                    point = 0;
+                                    status = 'perlu dinilai';
+                                }
+                            } catch (e) {
+                                console.error(`AI grading failed for question ${index + 1}:`, e);
+                                point = 0;
+                                status = 'perlu dinilai'; // Fallback
+                            }
+                        } else {
+                            point = 0;
+                            status = 'perlu dinilai'; // No answer key
+                        }
                     }
                     totalScore += point;
-                    
+
                     const resultRef = db.collection('examResults').doc();
                     batch.set(resultRef, {
                         kelas: AppState.currentUser.kelas,
@@ -3150,7 +3399,7 @@
                         namaLengkap: AppState.currentUser.nama,
                         noSoal: index + 1,
                         pertanyaan: question.question,
-                        jawabanSiswa: userAnswer !== undefined ? String(userAnswer) : 'Tidak dijawab',
+                        jawabanSiswa: userAnswer,
                         status: status,
                         nilai: point,
                         mataPelajaran: mataPelajaran,
@@ -3158,11 +3407,11 @@
                         tahunAjaran: tahunAjaran,
                         timestamp: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                });
+                }
 
                 const finalScore = AppState.questions.length > 0 ? Math.round(totalScore / AppState.questions.length) : 0;
                 const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
-                
+
                 const gradeRef = db.collection('grades').doc();
                 batch.set(gradeRef, {
                     kelas: AppState.currentUser.kelas,
@@ -3179,22 +3428,26 @@
 
                 try {
                     await batch.commit();
-                     // Security: Clear attempts and block on successful submission
                     ExamSecurity.clearAttempts(AppState.currentUser.username, AppState.selectedExamCode);
                     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
 
                     Swal.fire({
                         title: 'Ujian Selesai!',
-                        text: 'Terima kasih telah menyelesaikan ujian. Anda akan diarahkan kembali ke halaman login.',
+                        html: `Terima kasih telah menyelesaikan ujian.<br>Nilai akhir Anda adalah: <strong>${finalScore}</strong><br>Anda akan diarahkan kembali ke halaman login.`,
                         icon: 'success',
                         confirmButtonText: 'OK',
                         allowOutsideClick: false
                     }).then(() => Auth.logout());
                 } catch (error) {
                     console.error("Error submitting exam: ", error);
-                    UI.showNotification('Gagal menyimpan hasil ujian!', 'error');
+                    Swal.fire({
+                        title: 'Error!',
+                        text: 'Gagal menyimpan hasil ujian. Silakan coba lagi.',
+                        icon: 'error'
+                    });
                 }
             },
+
 
             showNotification(message, type = 'error') {
                 const Toast = Swal.mixin({
@@ -3403,6 +3656,3 @@
     </script>
 </body>
 </html>
-
-
-
