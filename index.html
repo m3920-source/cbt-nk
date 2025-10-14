@@ -1550,6 +1550,144 @@
                     `}).join('');
             },
             
+            async gradeAllWithAI() {
+                const resultsToGrade = AppState.currentlyDisplayed.results.filter(r => r.status === 'perlu dinilai');
+
+                if (resultsToGrade.length === 0) {
+                    UI.showNotification('Tidak ada jawaban yang perlu dinilai pada filter ini.', 'info');
+                    return;
+                }
+
+                UI.showConfirmModal(
+                    'Konfirmasi Penilaian AI',
+                    `Anda akan menilai <strong>${resultsToGrade.length}</strong> jawaban dengan AI. Proses ini mungkin memakan waktu dan menggunakan kuota API. Lanjutkan?`,
+                    async () => {
+                        Swal.fire({
+                            title: 'Menilai dengan AI...',
+                            html: `Memproses <strong>0</strong> dari <strong>${resultsToGrade.length}</strong> jawaban.`,
+                            allowOutsideClick: false,
+                            didOpen: () => {
+                                Swal.showLoading();
+                            }
+                        });
+
+                        const questionCache = {};
+                        const updates = [];
+                        let processedCount = 0;
+                        const affectedGrades = new Set(); // To store unique keys for recalculation
+
+                        for (const result of resultsToGrade) {
+                            try {
+                                // 1. Get questions if not cached
+                                if (!questionCache[result.kodesoal]) {
+                                    const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', result.kodesoal).get();
+                                    if (questionsSnapshot.empty) {
+                                        console.warn(`No questions found for kodesoal: ${result.kodesoal}. Skipping result ID ${result.id}`);
+                                        continue;
+                                    }
+                                    
+                                    let questions = questionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    const typeOrder = { 'pilihan_ganda': 1, 'isian': 2, 'uraian': 3 };
+                                    questions.sort((a, b) => {
+                                        const typeA = typeOrder[a.tipe] || 99;
+                                        const typeB = typeOrder[b.tipe] || 99;
+                                        if (typeA !== typeB) return typeA - typeB;
+                                        const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
+                                        const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
+                                        return timeA - timeB;
+                                    });
+                                    questionCache[result.kodesoal] = questions;
+                                }
+
+                                const questions = questionCache[result.kodesoal];
+                                const question = questions[result.noSoal - 1];
+
+                                if (!question || !question.jawabanBenar) {
+                                    console.warn(`Correct answer not found for question no ${result.noSoal} in kodesoal ${result.kodesoal}. Skipping.`);
+                                    continue;
+                                }
+
+                                // 2. Call Gemini for grading
+                                const gradingResult = await GeminiHelper.gradeAnswer(question.pertanyaan, question.jawabanBenar, result.jawabanSiswa);
+
+                                if (gradingResult) {
+                                    const newNilai = gradingResult.nilai;
+                                    const newStatus = newNilai > 0 ? 'benar' : 'salah';
+                                    updates.push({ id: result.id, data: { nilai: newNilai, status: newStatus } });
+                                    affectedGrades.add(`${result.namaLengkap}__${result.kodesoal}`);
+                                }
+                            } catch (error) {
+                                console.error(`Failed to grade result ID ${result.id}:`, error);
+                            }
+
+                            processedCount++;
+                            Swal.update({
+                                html: `Memproses <strong>${processedCount}</strong> dari <strong>${resultsToGrade.length}</strong> jawaban.`
+                            });
+                        }
+
+                        // 3. Batch update examResults
+                        if (updates.length > 0) {
+                            const batch = db.batch();
+                            updates.forEach(update => {
+                                const docRef = db.collection('examResults').doc(update.id);
+                                batch.update(docRef, update.data);
+                            });
+                            await batch.commit();
+                        }
+
+                        // 4. Recalculate final grades for affected students
+                        Swal.update({
+                            html: 'Menghitung ulang nilai akhir...'
+                        });
+                        
+                        for (const gradeKey of affectedGrades) {
+                            const [namaLengkap, kodesoal] = gradeKey.split('__');
+                            
+                            const allQuestionsSnapshot = await db.collection('examQuestions').where('kode', '==', kodesoal).get();
+                            const totalQuestionsForExam = allQuestionsSnapshot.size;
+
+                            if (totalQuestionsForExam === 0) continue;
+
+                            const studentResultsSnapshot = await db.collection('examResults')
+                                .where('namaLengkap', '==', namaLengkap)
+                                .where('kodesoal', '==', kodesoal)
+                                .get();
+                            
+                            let totalScore = 0;
+                            studentResultsSnapshot.docs.forEach(doc => {
+                                const resultData = doc.data();
+                                // Only count score if it's not pending review
+                                if (resultData.status !== 'perlu dinilai') {
+                                    totalScore += resultData.nilai;
+                                }
+                            });
+                            
+                            const finalScore = Math.round(totalScore / totalQuestionsForExam);
+                            const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
+
+                            const gradeQuery = await db.collection('grades')
+                                .where('namaSiswa', '==', namaLengkap)
+                                .where('kodeSoal', '==', kodesoal)
+                                .limit(1).get();
+
+                            if (!gradeQuery.empty) {
+                                const gradeDocId = gradeQuery.docs[0].id;
+                                await db.collection('grades').doc(gradeDocId).update({
+                                    nilai: finalScore,
+                                    grade: grade,
+                                    keterangan: finalScore >= 70 ? 'Lulus' : 'Tidak Lulus'
+                                });
+                            }
+                        }
+
+                        Swal.close();
+                        UI.showNotification(`${updates.length} jawaban berhasil dinilai dengan AI.`, 'success');
+                        document.getElementById('applyResultFilterBtn').click(); // Refresh the view
+                    }
+                );
+            },
+
             async gradeWithAI(id) {
                 const button = document.getElementById(`grade-btn-${id}`);
                 if (!button) return;
@@ -2869,6 +3007,7 @@
                         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                             <h2 class="text-2xl font-bold text-gray-900">Hasil Ujian</h2>
                             <div class="flex flex-wrap items-center justify-start sm:justify-end gap-2 w-full sm:w-auto">
+                                <button onclick="Management.gradeAllWithAI()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition duration-200"><i class="fas fa-magic mr-2"></i>Nilai AI</button>
                                 <button onclick="Management.deleteFilteredResults()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition duration-200"><i class="fas fa-trash-alt mr-2"></i>Hapus</button>
                                 <button onclick="Management.downloadResultsPDF()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition duration-200"><i class="fas fa-download mr-2"></i>Download PDF</button>
                             </div>
@@ -3348,7 +3487,7 @@
                 if (AppState.examTimer) clearInterval(AppState.examTimer);
 
                 Swal.fire({
-                    title: 'Sedang Menyimpan Jawaban...',
+                    title: 'Sedang Memproses Jawaban...',
                     html: 'Mohon tunggu, jawaban Anda sedang disimpan.',
                     allowOutsideClick: false,
                     didOpen: () => {
@@ -3364,7 +3503,6 @@
 
                 let totalScore = 0;
                 const batch = db.batch();
-                const hasEssayOrFill = AppState.questions.some(q => q.type === 'fill' || q.type === 'essay');
 
                 for (const [index, question] of AppState.questions.entries()) {
                     const userAnswer = AppState.examAnswers[index] !== undefined ? String(AppState.examAnswers[index]) : 'Tidak dijawab';
@@ -3423,9 +3561,7 @@
 
                     Swal.fire({
                         title: 'Ujian Selesai!',
-                        html: hasEssayOrFill
-                            ? `Terima kasih telah menyelesaikan ujian.<br>Jawaban Anda telah berhasil dikirim. Nilai akhir akan tersedia setelah guru selesai memeriksa.<br>Anda akan diarahkan kembali ke halaman login.`
-                            : `Terima kasih telah menyelesaikan ujian.<br>Nilai akhir Anda adalah: <strong>${finalScore}</strong><br>Anda akan diarahkan kembali ke halaman login.`,
+                        html: `Terima kasih telah menyelesaikan ujian.<br>Nilai akhir Anda adalah: <strong>${finalScore}</strong><br>Anda akan diarahkan kembali ke halaman login.`,
                         icon: 'success',
                         confirmButtonText: 'OK',
                         allowOutsideClick: false
@@ -3439,6 +3575,7 @@
                     });
                 }
             },
+
 
             showNotification(message, type = 'error') {
                 const Toast = Swal.mixin({
