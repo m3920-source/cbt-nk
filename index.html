@@ -239,7 +239,7 @@
             <div class="overflow-y-auto">
                 <div id="questionListModalContent" class="grid grid-cols-5 gap-2 sm:gap-4">
                     <!-- Navigation buttons will be rendered here via JS -->
-      u          </div>
+                </div>
             </div>
             <div class="mt-6 pt-4 border-t flex justify-center items-center gap-4 text-sm flex-wrap">
                 <span class="flex items-center"><span class="w-4 h-4 rounded-full bg-green-500 mr-2"></span>Sudah dijawab</span>
@@ -3225,114 +3225,113 @@
                 return `${h}:${m}:${s}`;
             },
 
-// ================================
-// ✅ FUNGSI SUBMIT UJIAN DENGAN PENGIRIMAN BATCH KE GOOGLE SHEET
-// ================================
-async function submitExam() {
-    try {
-        if (AppState.examTimer) clearInterval(AppState.examTimer);
+            // ================================
+            // ✅ FUNGSI SUBMIT UJIAN DENGAN PENGIRIMAN BATCH KE GOOGLE SHEET
+            // ================================
+            async submitExam() {
+                try {
+                    if (AppState.examTimer) clearInterval(AppState.examTimer);
 
-        Swal.fire({
-            title: 'Sedang Memproses Jawaban...',
-            html: 'Mohon tunggu, semua jawaban Anda sedang disimpan.',
-            allowOutsideClick: false,
-            didOpen: () => Swal.showLoading()
-        });
+                    Swal.fire({
+                        title: 'Sedang Memproses Jawaban...',
+                        html: 'Mohon tunggu, semua jawaban Anda sedang disimpan.',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
 
-        // Ambil metadata ujian (mapel, semester, tahun ajaran)
-        const examDetailsSnapshot = await db.collection('examQuestions')
-            .where('kode', '==', AppState.selectedExamCode)
-            .limit(1)
-            .get();
+                    // Ambil metadata ujian (mapel, semester, tahun ajaran)
+                    const examDetailsSnapshot = await db.collection('examQuestions')
+                        .where('kode', '==', AppState.selectedExamCode)
+                        .limit(1)
+                        .get();
 
-        const firstQuestionData = !examDetailsSnapshot.empty ? examDetailsSnapshot.docs[0].data() : {};
-        const mataPelajaran = firstQuestionData.mataPelajaran || 'Tidak diketahui';
-        const semester = firstQuestionData.semester || 'Tidak diketahui';
-        const tahunAjaran = firstQuestionData.tahunAjaran || 'Tidak diketahui';
+                    const firstQuestionData = !examDetailsSnapshot.empty ? examDetailsSnapshot.docs[0].data() : {};
+                    const mataPelajaran = firstQuestionData.mataPelajaran || 'Tidak diketahui';
+                    const semester = firstQuestionData.semester || 'Tidak diketahui';
+                    const tahunAjaran = firstQuestionData.tahunAjaran || 'Tidak diketahui';
 
-        // Persiapkan hasil
-        let totalScore = 0;
-        const resultsPayload = [];
+                    // Persiapkan hasil
+                    let totalScore = 0;
+                    const resultsPayload = [];
 
-        for (const [index, question] of AppState.questions.entries()) {
-            const userAnswer = AppState.examAnswers[index] !== undefined
-                ? String(AppState.examAnswers[index])
-                : 'Tidak dijawab';
-            let point = 0;
-            let status = 'salah';
+                    for (const [index, question] of AppState.questions.entries()) {
+                        const userAnswer = AppState.examAnswers[index] !== undefined
+                            ? String(AppState.examAnswers[index])
+                            : 'Tidak dijawab';
+                        let point = 0;
+                        let status = 'salah';
 
-            if (question.tipe === 'pilihan_ganda') {
-                if (question.correct !== undefined && AppState.examAnswers[index] == question.correct) {
-                    point = 100;
-                    status = 'benar';
+                        if (question.tipe === 'pilihan_ganda') {
+                            if (question.correct !== undefined && AppState.examAnswers[index] == question.correct) {
+                                point = 100;
+                                status = 'benar';
+                            }
+                        } else {
+                            point = 0;
+                            status = 'perlu dinilai';
+                        }
+
+                        totalScore += point;
+
+                        resultsPayload.push({
+                            kelas: AppState.currentUser.kelas,
+                            kodesoal: AppState.selectedExamCode,
+                            namaLengkap: AppState.currentUser.nama,
+                            noSoal: index + 1,
+                            pertanyaan: question.pertanyaan || question.question || '',
+                            jawabanSiswa: userAnswer,
+                            status: status,
+                            nilai: point,
+                            correctAnswer: question.correctAnswer || '',
+                            mataPelajaran,
+                            semester,
+                            tahunAjaran
+                        });
+                    }
+
+                    // ================================
+                    // 📤 KIRIM SEMUA DATA SEKALIGUS (BATCH)
+                    // ================================
+                    try {
+                        const response = await fetch(GOOGLE_SCRIPT_URL, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                action: "saveExamResultBatch", // aksi baru
+                                data: resultsPayload
+                            }),
+                        });
+
+                        const res = await response.json();
+                        if (res.status !== "success") {
+                            throw new Error(res.message || "Gagal menyimpan ke Sheet");
+                        }
+                    } catch (error) {
+                        console.error("Error kirim hasil batch:", error);
+                        throw error;
+                    }
+
+                    // ================================
+                    // ✅ SELESAI
+                    // ================================
+                    Swal.fire({
+                        icon: "success",
+                        title: "Ujian Selesai!",
+                        text: "Semua jawaban berhasil dikirim ke server dan disimpan di Google Sheet.",
+                        confirmButtonText: "OK"
+                    }).then(() => {
+                        UI.showDashboard();
+                    });
+
+                } catch (error) {
+                    console.error("Error saat submit ujian:", error);
+                    Swal.fire({
+                        icon: "error",
+                        title: "Gagal Mengirim Jawaban",
+                        text: "Terjadi kesalahan saat mengirim hasil ujian. Silakan coba lagi."
+                    });
                 }
-            } else {
-                point = 0;
-                status = 'perlu dinilai';
-            }
-
-            totalScore += point;
-
-            resultsPayload.push({
-                kelas: AppState.currentUser.kelas,
-                kodesoal: AppState.selectedExamCode,
-                namaLengkap: AppState.currentUser.nama,
-                noSoal: index + 1,
-                pertanyaan: question.pertanyaan || question.question || '',
-                jawabanSiswa: userAnswer,
-                status: status,
-                nilai: point,
-                correctAnswer: question.correctAnswer || '',
-                mataPelajaran,
-                semester,
-                tahunAjaran
-            });
-        }
-
-        // ================================
-        // 📤 KIRIM SEMUA DATA SEKALIGUS (BATCH)
-        // ================================
-        try {
-            const response = await fetch(GOOGLE_SCRIPT_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    action: "saveExamResultBatch", // aksi baru
-                    data: resultsPayload
-                }),
-            });
-
-            const res = await response.json();
-            if (res.status !== "success") {
-                throw new Error(res.message || "Gagal menyimpan ke Sheet");
-            }
-        } catch (error) {
-            console.error("Error kirim hasil batch:", error);
-            throw error;
-        }
-
-        // ================================
-        // ✅ SELESAI
-        // ================================
-        Swal.fire({
-            icon: "success",
-            title: "Ujian Selesai!",
-            text: "Semua jawaban berhasil dikirim ke server dan disimpan di Google Sheet.",
-            confirmButtonText: "OK"
-        }).then(() => {
-            UI.showDashboard();
-        });
-
-    } catch (error) {
-        console.error("Error saat submit ujian:", error);
-        Swal.fire({
-            icon: "error",
-            title: "Gagal Mengirim Jawaban",
-            text: "Terjadi kesalahan saat mengirim hasil ujian. Silakan coba lagi."
-        });
-    }
-}
-
+            },
 
             showNotification(message, type = 'error') {
                 const Toast = Swal.mixin({
