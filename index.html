@@ -271,7 +271,7 @@
         // =================================================================
         // GOOGLE SCRIPT CONFIGURATION
         // =================================================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby59SHmd-IPWeo_wtQl6InD_BmynOLW4xfOV3Ou4q-OQVQWeXo7lASmsXtxOxkoniq7/exec';
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxv1KMZWfLcpChGKS7eJDFFBTj_vznwIWsgez3jLhk0mHSnnHsAXG0DGOahku_a_KjK/exec';
 
 
         // =================================================================
@@ -3225,106 +3225,113 @@
                 return `${h}:${m}:${s}`;
             },
 
-            async submitExam() {
-                if (AppState.examTimer) clearInterval(AppState.examTimer);
+// ================================
+// ✅ FUNGSI SUBMIT UJIAN DENGAN PENGIRIMAN BATCH KE GOOGLE SHEET
+// ================================
+async function submitExam() {
+    try {
+        if (AppState.examTimer) clearInterval(AppState.examTimer);
 
-                Swal.fire({
-                    title: 'Sedang Memproses Jawaban...',
-                    html: 'Mohon tunggu, jawaban Anda sedang disimpan.',
-                    allowOutsideClick: false,
-                    didOpen: () => Swal.showLoading()
-                });
+        Swal.fire({
+            title: 'Sedang Memproses Jawaban...',
+            html: 'Mohon tunggu, semua jawaban Anda sedang disimpan.',
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading()
+        });
 
-                const examDetailsSnapshot = await db.collection('examQuestions').where('kode', '==', AppState.selectedExamCode).limit(1).get();
-                const firstQuestionData = !examDetailsSnapshot.empty ? examDetailsSnapshot.docs[0].data() : {};
-                const mataPelajaran = firstQuestionData.mataPelajaran || 'Tidak diketahui';
-                const semester = firstQuestionData.semester || 'Tidak diketahui';
-                const tahunAjaran = firstQuestionData.tahunAjaran || 'Tidak diketahui';
+        // Ambil metadata ujian (mapel, semester, tahun ajaran)
+        const examDetailsSnapshot = await db.collection('examQuestions')
+            .where('kode', '==', AppState.selectedExamCode)
+            .limit(1)
+            .get();
 
-                let totalScore = 0;
-                const resultsPayload = [];
+        const firstQuestionData = !examDetailsSnapshot.empty ? examDetailsSnapshot.docs[0].data() : {};
+        const mataPelajaran = firstQuestionData.mataPelajaran || 'Tidak diketahui';
+        const semester = firstQuestionData.semester || 'Tidak diketahui';
+        const tahunAjaran = firstQuestionData.tahunAjaran || 'Tidak diketahui';
 
-                for (const [index, question] of AppState.questions.entries()) {
-                    const userAnswer = AppState.examAnswers[index] !== undefined ? String(AppState.examAnswers[index]) : 'Tidak dijawab';
-                    let point = 0;
-                    let status = 'salah';
+        // Persiapkan hasil
+        let totalScore = 0;
+        const resultsPayload = [];
 
-                    if (question.type === 'multiple') {
-                        if (question.correct !== undefined && AppState.examAnswers[index] === question.correct) {
-                            point = 100;
-                            status = 'benar';
-                        }
-                    } else {
-                        point = 0;
-                        status = 'perlu dinilai';
-                    }
-                    totalScore += point;
+        for (const [index, question] of AppState.questions.entries()) {
+            const userAnswer = AppState.examAnswers[index] !== undefined
+                ? String(AppState.examAnswers[index])
+                : 'Tidak dijawab';
+            let point = 0;
+            let status = 'salah';
 
-                    resultsPayload.push({
-                        kelas: AppState.currentUser.kelas,
-                        kodesoal: AppState.selectedExamCode,
-                        namaLengkap: AppState.currentUser.nama,
-                        noSoal: index + 1,
-                        pertanyaan: question.question,
-                        jawabanSiswa: userAnswer,
-                        status: status,
-                        nilai: point,
-                        correctAnswer: question.correctAnswer || '',
-                        mataPelajaran: mataPelajaran,
-                        semester: semester,
-                        tahunAjaran: tahunAjaran,
-                        timestamp: new Date().toISOString()
-                    });
+            if (question.tipe === 'pilihan_ganda') {
+                if (question.correct !== undefined && AppState.examAnswers[index] == question.correct) {
+                    point = 100;
+                    status = 'benar';
                 }
-                
-                try {
-                    // 1. Save exam results to Google Sheet
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ action: 'addResults', data: resultsPayload })
-                    });
-                    const result = await response.json();
-                    if (result.status !== 'success') {
-                        throw new Error(result.message || 'Gagal menyimpan hasil ke Google Sheet.');
-                    }
-                
-                    // 2. Save final grade to Firebase (remains the same)
-                    const finalScore = AppState.questions.length > 0 ? Math.round(totalScore / AppState.questions.length) : 0;
-                    const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
+            } else {
+                point = 0;
+                status = 'perlu dinilai';
+            }
 
-                    await db.collection('grades').add({
-                        kelas: AppState.currentUser.kelas,
-                        namaSiswa: AppState.currentUser.nama,
-                        kodeSoal: AppState.selectedExamCode,
-                        mataPelajaran: mataPelajaran,
-                        semester: semester,
-                        tahunAjaran: tahunAjaran,
-                        nilai: finalScore,
-                        grade: grade,
-                        keterangan: finalScore >= 70 ? 'Lulus' : 'Tidak Lulus',
-                        waktuSelesai: new Date().toLocaleString('id-ID')
-                    });
+            totalScore += point;
 
-                    ExamSecurity.clearAttempts(AppState.currentUser.username, AppState.selectedExamCode);
-                    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+            resultsPayload.push({
+                kelas: AppState.currentUser.kelas,
+                kodesoal: AppState.selectedExamCode,
+                namaLengkap: AppState.currentUser.nama,
+                noSoal: index + 1,
+                pertanyaan: question.pertanyaan || question.question || '',
+                jawabanSiswa: userAnswer,
+                status: status,
+                nilai: point,
+                correctAnswer: question.correctAnswer || '',
+                mataPelajaran,
+                semester,
+                tahunAjaran
+            });
+        }
 
-                    Swal.fire({
-                        title: 'Ujian Selesai!',
-                        html: `Terima kasih telah menyelesaikan ujian.<br>Anda akan diarahkan kembali ke halaman login.`,
-                        icon: 'success',
-                        confirmButtonText: 'OK',
-                        allowOutsideClick: false
-                    }).then(() => Auth.logout());
-                } catch (error) {
-                    console.error("Error submitting exam: ", error);
-                    Swal.fire({
-                        title: 'Error!',
-                        text: 'Gagal menyimpan hasil ujian. ' + error.message,
-                        icon: 'error'
-                    });
-                }
-            },
+        // ================================
+        // 📤 KIRIM SEMUA DATA SEKALIGUS (BATCH)
+        // ================================
+        try {
+            const response = await fetch(GOOGLE_SCRIPT_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "saveExamResultBatch", // aksi baru
+                    data: resultsPayload
+                }),
+            });
+
+            const res = await response.json();
+            if (res.status !== "success") {
+                throw new Error(res.message || "Gagal menyimpan ke Sheet");
+            }
+        } catch (error) {
+            console.error("Error kirim hasil batch:", error);
+            throw error;
+        }
+
+        // ================================
+        // ✅ SELESAI
+        // ================================
+        Swal.fire({
+            icon: "success",
+            title: "Ujian Selesai!",
+            text: "Semua jawaban berhasil dikirim ke server dan disimpan di Google Sheet.",
+            confirmButtonText: "OK"
+        }).then(() => {
+            UI.showDashboard();
+        });
+
+    } catch (error) {
+        console.error("Error saat submit ujian:", error);
+        Swal.fire({
+            icon: "error",
+            title: "Gagal Mengirim Jawaban",
+            text: "Terjadi kesalahan saat mengirim hasil ujian. Silakan coba lagi."
+        });
+    }
+}
 
 
             showNotification(message, type = 'error') {
