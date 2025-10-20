@@ -267,12 +267,6 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
         const auth = firebase.auth(); // Firebase Auth instance
-        
-        // =================================================================
-        // GOOGLE SCRIPT CONFIGURATION
-        // =================================================================
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzypI4M2w1I_jyCm0_2rY8q071UFkmn_d4t2DUvEWgzzpnwkepfpu_HkBggPyS0lWW_/exec';
-
 
         // =================================================================
         // APPLICATION STATE
@@ -283,6 +277,8 @@
             examAnswers: {},
             examTimer: null,
             examTimeLeft: 3600, // 60 minutes in seconds
+            examInitialWidth: 0,
+            examInitialHeight: 0,
             questions: [], // This will be populated from Firestore for the current exam
             currentView: 'login',
             selectedExamCode: null,
@@ -294,10 +290,24 @@
             },
             currentlyDisplayed: {
                 questions: [],
-                results: [], // This will now be populated from Google Sheets
+                results: [],
                 grades: []
             },
-            // Users are fetched from Google Script
+            // Pagination and Caching
+            pagination: {
+                questions: { currentPage: 1, totalItems: 0 },
+                results: { currentPage: 1, totalItems: 0 },
+                grades: { currentPage: 1, totalItems: 0 }
+            },
+            itemsPerPage: 25,
+            cache: {
+                _data: {},
+                generateKey: (prefix, filters) => `${prefix}_${JSON.stringify(filters)}`,
+                get: function(key) { return this._data[key]; },
+                set: function(key, value) { this._data[key] = value; },
+                clear: function() { this._data = {}; }
+            },
+            // Users are now fetched from Google Script
             users: [],
             // Classes and Subjects remain local
             classes: [
@@ -325,17 +335,56 @@
         };
         
         // =================================================================
+        // GOOGLE SCRIPT HELPER
+        // =================================================================
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFePlsrh-BiSPvN9soA9Z_RChxXvloYHM45EPWHjdXxO-UvKXfb4l25lSlSp30jdGJ/exec';
+
+        async function callGoogleScript(method = 'GET', params = {}) {
+            const url = new URL(SCRIPT_URL);
+            
+            if (method === 'GET') {
+                Object.keys(params).forEach(key => {
+                    if (params[key]) { // Only append non-empty params
+                        url.searchParams.append(key, params[key]);
+                    }
+                });
+
+                try {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.json();
+                } catch (error) {
+                    console.error('Error calling Google Script (GET):', error);
+                    UI.showNotification('Gagal terhubung ke Google Sheet.', 'error');
+                    throw error;
+                }
+            } else if (method === 'POST') {
+                try {
+                    const response = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        mode: 'no-cors', // Important for simple POST to Apps Script
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(params),
+                        redirect: 'follow'
+                    });
+                    // With 'no-cors', we can't read the response, so we optimistically assume success.
+                    // The Apps Script should handle errors internally.
+                    return { status: 'success', message: 'Data sent successfully.' };
+                } catch (error) {
+                    console.error('Error calling Google Script (POST):', error);
+                    UI.showNotification('Gagal mengirim data ke Google Sheet.', 'error');
+                    throw error;
+                }
+            }
+        }
+        
+        // =================================================================
         // DATA FETCHING
         // =================================================================
         async function fetchUsersFromGoogleScript() {
             try {
-                const response = await fetch(GOOGLE_SCRIPT_URL);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const result = await response.json();
+                const result = await callGoogleScript('GET', { action: 'getUsers' });
                 if (result.status === 'success' && Array.isArray(result.data)) {
-                    // Add a unique local ID to each user for easier management
                     AppState.users = result.data.map((user, index) => ({
                         ...user,
                         id: `gs-user-${index}`
@@ -343,7 +392,7 @@
                     console.log('User data loaded successfully from Google Script.');
                     return true;
                 } else {
-                    throw new Error('Invalid data format received from Google Script.');
+                    throw new Error('Invalid data format received from Google Script for users.');
                 }
             } catch (error) {
                 console.error('Failed to fetch user data:', error);
@@ -417,7 +466,7 @@
 
 
         // =================================================================
-        // MANAGEMENT SYSTEM (with Firebase & Google Sheet Integration)
+        // MANAGEMENT SYSTEM (with Firebase & Google Sheets Integration)
         // =================================================================
         const Management = {
             generateId() {
@@ -787,7 +836,7 @@
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Tipe Soal</label>
-                            <select id="questionTypeSelect" name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="const type = this.value; document.getElementById('pilihanField').classList.toggle('hidden', type !== 'pilihan_ganda'); document.getElementById('jawabanTeksField').classList.toggle('hidden', type === 'pilihan_ganda' || type === '');">
+                            <select id="questionTypeSelect" name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="UI.toggleAnswerFields(this.value, 'addQuestionForm')">
                                 <option value="">Pilih Tipe Soal</option>
                                 <option value="pilihan_ganda" ${lastData.tipe === 'pilihan_ganda' ? 'selected' : ''}>Pilihan Ganda</option>
                                 <option value="isian" ${lastData.tipe === 'isian' ? 'selected' : ''}>Isian</option>
@@ -804,12 +853,12 @@
                             <p class="text-xs text-gray-500 mt-1">Ukuran gambar maksimal 10cm x 10cm</p>
                         </div>
                         <div id="pilihanField" class="${lastData.tipe === 'pilihan_ganda' ? '' : 'hidden'} space-y-2">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Pilihan Jawaban</label>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Pilihan & Jawaban Benar</label>
                             <input type="text" name="pilihan1" placeholder="Pilihan A" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <input type="text" name="pilihan2" placeholder="Pilihan B" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <input type="text" name="pilihan3" placeholder="Pilihan C" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <input type="text" name="pilihan4" placeholder="Pilihan D" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <select name="jawabanBenar" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <select name="correct" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <option value="">Pilih Jawaban Benar</option>
                                 <option value="0">A</option>
                                 <option value="1">B</option>
@@ -819,7 +868,7 @@
                         </div>
                         <div id="jawabanTeksField" class="hidden">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Jawaban Benar</label>
-                            <textarea name="jawabanBenarTeks" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Masukkan jawaban yang benar untuk soal isian/uraian"></textarea>
+                            <textarea name="jawabanBenar" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Masukkan jawaban yang benar untuk soal isian/uraian"></textarea>
                         </div>
                         <div class="flex justify-end space-x-2 pt-4">
                             <button type="button" onclick="UI.hideModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800">Batal</button>
@@ -832,14 +881,25 @@
                 document.getElementById('addQuestionForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
                     const form = e.target;
+                    
+                    const formData = new FormData(form);
+                    const questionData = Object.fromEntries(formData);
+
+                    // Validation
+                    if (questionData.tipe === 'pilihan_ganda' && !questionData.correct) {
+                        UI.showNotification('Silakan pilih jawaban yang benar untuk Pilihan Ganda.', 'error');
+                        return;
+                    }
+                    if ((questionData.tipe === 'isian' || questionData.tipe === 'uraian') && !questionData.jawabanBenar.trim()) {
+                         UI.showNotification('Silakan isi kunci jawaban untuk soal Isian atau Uraian.', 'error');
+                        return;
+                    }
+
                     const submitButton = form.querySelector('button[type="submit"]');
                     submitButton.disabled = true;
                     submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Menyimpan...';
-
-                    const formData = new FormData(form);
-                    const questionData = Object.fromEntries(formData);
                     
-                    // Tambahkan informasi pemilik soal
+                    // Add owner info
                     questionData.createdBy = AppState.currentUser.nama;
                     
                     const fileInput = document.getElementById('gambarInput');
@@ -851,28 +911,22 @@
 
                     if (questionData.tipe === 'pilihan_ganda') {
                         questionData.pilihan = [
-                            questionData.pilihan1,
-                            questionData.pilihan2,
-                            questionData.pilihan3,
-                            questionData.pilihan4
+                            questionData.pilihan1, questionData.pilihan2, questionData.pilihan3, questionData.pilihan4
                         ].filter(p => p);
-                        questionData.correct = parseInt(questionData.jawabanBenar);
+                        questionData.correct = parseInt(questionData.correct);
                         delete questionData.pilihan1;
                         delete questionData.pilihan2;
                         delete questionData.pilihan3;
                         delete questionData.pilihan4;
                         delete questionData.jawabanBenar;
-                    } else if (questionData.tipe === 'isian' || questionData.tipe === 'uraian') {
-                        questionData.jawabanBenar = questionData.jawabanBenarTeks;
-                        delete questionData.jawabanBenarTeks;
+                    } else {
+                        // All good, 'jawabanBenar' is already correct
                     }
                     
                     try {
-                        // Add timestamp for ordering
                         questionData.createdAt = firebase.firestore.FieldValue.serverTimestamp(); 
-                        
-                        // Firebase Integration: Add question to Firestore
                         await db.collection('examQuestions').add(questionData);
+                        AppState.cache.clear(); 
                         AppState.lastQuestionData = {
                             tahunAjaran: questionData.tahunAjaran,
                             semester: questionData.semester,
@@ -969,7 +1023,6 @@
 
             async editQuestion(id) {
                 try {
-                    // Firebase Integration: Get question from Firestore
                     const doc = await db.collection('examQuestions').doc(id).get();
                     if (!doc.exists) {
                         UI.showNotification('Soal tidak ditemukan', 'error');
@@ -982,7 +1035,7 @@
                         const teacherGrade = AppState.currentUser.kelas.charAt(0);
                         const availableClasses = AppState.classes.filter(c => c.nama.startsWith(teacherGrade));
                         classOptions = availableClasses.map(c => `<option value="${c.nama}" ${question.kelas === c.nama ? 'selected' : ''}>${c.nama}</option>`).join('');
-                    } else { // Admin sees all classes
+                    } else { 
                         classOptions = AppState.classes.map(c => `<option value="${c.nama}" ${question.kelas === c.nama ? 'selected' : ''}>${c.nama}</option>`).join('');
                     }
                     
@@ -1027,7 +1080,7 @@
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Tipe Soal</label>
-                                <select name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="const type = this.value; document.getElementById('editPilihanField').classList.toggle('hidden', type !== 'pilihan_ganda'); document.getElementById('editJawabanTeksField').classList.toggle('hidden', type === 'pilihan_ganda' || type === '');">
+                                <select name="tipe" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="UI.toggleAnswerFields(this.value, 'editQuestionForm')">
                                     <option value="pilihan_ganda" ${question.tipe === 'pilihan_ganda' ? 'selected' : ''}>Pilihan Ganda</option>
                                     <option value="isian" ${question.tipe === 'isian' ? 'selected' : ''}>Isian</option>
                                     <option value="uraian" ${question.tipe === 'uraian' ? 'selected' : ''}>Uraian</option>
@@ -1045,13 +1098,13 @@
                                     ${question.gambar ? `<img src="${question.gambar}" class="w-full max-w-sm mx-auto rounded-lg shadow-sm">` : ''}
                                 </div>
                             </div>
-                            <div id="editPilihanField" class="${question.tipe === 'pilihan_ganda' ? '' : 'hidden'} space-y-2">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Pilihan Jawaban</label>
+                            <div id="pilihanField" class="${question.tipe === 'pilihan_ganda' ? '' : 'hidden'} space-y-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Pilihan & Jawaban Benar</label>
                                 <input type="text" name="pilihan1" value="${question.pilihan ? question.pilihan[0] || '' : ''}" placeholder="Pilihan A" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <input type="text" name="pilihan2" value="${question.pilihan ? question.pilihan[1] || '' : ''}" placeholder="Pilihan B" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <input type="text" name="pilihan3" value="${question.pilihan ? question.pilihan[2] || '' : ''}" placeholder="Pilihan C" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                                 <input type="text" name="pilihan4" value="${question.pilihan ? question.pilihan[3] || '' : ''}" placeholder="Pilihan D" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <select name="jawabanBenar" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <select name="correct" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                                     <option value="">Pilih Jawaban Benar</option>
                                     <option value="0" ${question.correct === 0 ? 'selected' : ''}>A</option>
                                     <option value="1" ${question.correct === 1 ? 'selected' : ''}>B</option>
@@ -1059,9 +1112,9 @@
                                     <option value="3" ${question.correct === 3 ? 'selected' : ''}>D</option>
                                 </select>
                             </div>
-                            <div id="editJawabanTeksField" class="${question.tipe === 'isian' || question.tipe === 'uraian' ? '' : 'hidden'}">
+                            <div id="jawabanTeksField" class="${question.tipe === 'isian' || question.tipe === 'uraian' ? '' : 'hidden'}">
                                 <label class="block text-sm font-medium text-gray-700 mb-2">Jawaban Benar</label>
-                                <textarea name="jawabanBenarTeks" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">${question.jawabanBenar || ''}</textarea>
+                                <textarea name="jawabanBenar" rows="4" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">${question.jawabanBenar || ''}</textarea>
                             </div>
                             <div class="flex justify-end space-x-2 pt-4">
                                 <button type="button" onclick="UI.hideModal()" class="px-4 py-2 text-gray-600 hover:text-gray-800">Batal</button>
@@ -1074,19 +1127,25 @@
                     document.getElementById('editQuestionForm').addEventListener('submit', async (e) => {
                         e.preventDefault();
                         const form = e.target;
-                        const submitButton = form.querySelector('button[type="submit"]');
-                        submitButton.disabled = true;
-                        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Mengupdate...';
-
                         const formData = new FormData(form);
                         const questionData = Object.fromEntries(formData);
                         
-                        // Preserve the original creator or assign current editor as owner for old questions
-                        if (question.createdBy) {
-                            questionData.createdBy = question.createdBy;
-                        } else {
-                            questionData.createdBy = AppState.currentUser.nama;
+                        // Validation
+                        if (questionData.tipe === 'pilihan_ganda' && !questionData.correct) {
+                            UI.showNotification('Silakan pilih jawaban yang benar untuk Pilihan Ganda.', 'error');
+                            return;
                         }
+                        if ((questionData.tipe === 'isian' || questionData.tipe === 'uraian') && !questionData.jawabanBenar.trim()) {
+                            UI.showNotification('Silakan isi kunci jawaban untuk soal Isian atau Uraian.', 'error');
+                            return;
+                        }
+
+                        const submitButton = form.querySelector('button[type="submit"]');
+                        submitButton.disabled = true;
+                        submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Mengupdate...';
+                        
+                        // Preserve owner info
+                        questionData.createdBy = question.createdBy || AppState.currentUser.nama;
                         
                         const fileInput = document.getElementById('editGambarInput');
                         if (fileInput.files[0]) {
@@ -1099,23 +1158,20 @@
                             questionData.pilihan = [
                                 questionData.pilihan1, questionData.pilihan2, questionData.pilihan3, questionData.pilihan4
                             ].filter(p => p);
-                            questionData.correct = parseInt(questionData.jawabanBenar);
-                            questionData.jawabanBenar = null; // Clear text answer
+                            questionData.correct = parseInt(questionData.correct);
+                            questionData.jawabanBenar = null; 
                             delete questionData.pilihan1;
                             delete questionData.pilihan2;
                             delete questionData.pilihan3;
                             delete questionData.pilihan4;
-                            delete questionData.jawabanBenarTeks;
-                        } else if (questionData.tipe === 'isian' || questionData.tipe === 'uraian') {
-                            questionData.jawabanBenar = questionData.jawabanBenarTeks;
-                            questionData.pilihan = []; // Clear choices
-                            questionData.correct = null; // Clear correct choice
-                            delete questionData.jawabanBenarTeks;
+                        } else {
+                            questionData.pilihan = []; 
+                            questionData.correct = null;
                         }
                         
                         try {
-                            // Firebase Integration: Update question in Firestore
                             await db.collection('examQuestions').doc(question.id).set(questionData, { merge: true });
+                            AppState.cache.clear(); 
                             UI.hideModal();
                             UI.showNotification('Soal berhasil diupdate!', 'success');
                         } catch (error) {
@@ -1136,9 +1192,10 @@
             deleteQuestion(id) {
                 UI.showConfirmModal('Konfirmasi Hapus', 'Apakah Anda yakin ingin menghapus soal ini dari Firebase?', async () => {
                     try {
-                        // Firebase Integration: Delete question from Firestore
                         await db.collection('examQuestions').doc(id).delete();
+                        AppState.cache.clear();
                         UI.showNotification('Soal berhasil dihapus!', 'success');
+                        document.getElementById('applyFilterBtn').click();
                     } catch (error) {
                         console.error("Error removing document: ", error);
                         UI.showNotification('Gagal menghapus soal!', 'error');
@@ -1147,27 +1204,13 @@
             },
 
             renderFilteredQuestions(questions) {
-                AppState.currentlyDisplayed.questions = questions; // Store for bulk delete
+                AppState.currentlyDisplayed.questions = questions; 
                 const questionsList = document.getElementById('questionsList');
                 if (!questionsList) return;
-
-                const typeOrder = { 'pilihan_ganda': 1, 'isian': 2, 'uraian': 3 };
-                questions.sort((a, b) => {
-                    const typeA = typeOrder[a.tipe] || 99;
-                    const typeB = typeOrder[b.tipe] || 99;
-                    if (typeA !== typeB) {
-                        return typeA - typeB;
-                    }
-                    const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
-                    const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
-                    return timeA - timeB;
-                });
 
                 questionsList.innerHTML = questions.length === 0 ?
                     '<div class="bg-white rounded-lg shadow p-6 text-center text-gray-500">Tidak ada soal yang sesuai dengan filter</div>' :
                     questions.map((question, index) => {
-                        // Allow admin to edit everything.
-                        // Allow teachers to edit their own questions OR orphaned questions.
                         const canEdit = AppState.currentUser.role === 'admin' || 
                                       (question.createdBy && question.createdBy === AppState.currentUser.nama) ||
                                       (!question.createdBy && AppState.currentUser.role === 'guru');
@@ -1183,7 +1226,7 @@
                                         <span class="text-xs text-gray-500">Kode: ${question.kode}</span>
                                         <span class="text-xs text-gray-400">Dibuat oleh: ${question.createdBy || '-'}</span>
                                     </div>
-                                    <h4 class="font-medium text-gray-900 mb-2">Soal No. ${index + 1}</h4>
+                                    <h4 class="font-medium text-gray-900 mb-2">Soal No. ${index + 1 + (AppState.pagination.questions.currentPage - 1) * AppState.itemsPerPage}</h4>
                                     <p class="text-gray-700 mb-3">${(question.pertanyaan || '').length > 100 ? (question.pertanyaan || '').substring(0, 100) + '...' : (question.pertanyaan || '')}</p>
                                 </div>
                                 <div class="flex space-x-3 ml-4">
@@ -1374,6 +1417,7 @@
 
                     try {
                         await batch.commit();
+                        AppState.cache.clear(); // Clear cache to reflect new data
                         UI.hideGeminiModal();
                         UI.showNotification(`${questions.length} soal berhasil disimpan!`, 'success');
                     } catch(error) {
@@ -1386,13 +1430,28 @@
             },
 
             // =================================================================
-            // Result Management (Google Sheet Integration)
+            // Result Management (Google Sheets Integration)
             // =================================================================
-            viewResult(rowIndex) {
-                // Data is fetched from AppState, not a new request
-                const result = AppState.currentlyDisplayed.results.find(r => r.rowIndex == rowIndex);
+            async viewResult(id) {
+                 const filters = {
+                    action: 'getResults',
+                    tahunAjaran: document.getElementById('filterResultTahunAjaran').value,
+                    semester: document.getElementById('filterResultSemester').value,
+                    kodesoal: document.getElementById('filterResultCode').value,
+                    mataPelajaran: document.getElementById('filterResultSubject').value,
+                    kelas: document.getElementById('filterResultClass').value,
+                    namaLengkap: document.getElementById('filterResultStudent').value,
+                };
+                const cacheKey = AppState.cache.generateKey('results', filters);
+                const allFilteredResults = AppState.cache.get(cacheKey);
+                if (!allFilteredResults) {
+                     UI.showNotification('Data cache tidak ditemukan, silakan filter ulang.', 'error');
+                     return;
+                }
+                const result = allFilteredResults.find(r => r.resultId === id);
+
                 if (!result) {
-                    UI.showNotification('Data hasil tidak ditemukan.', 'error');
+                    UI.showNotification('Data hasil ujian tidak ditemukan di cache.', 'error');
                     return;
                 }
                 const content = `
@@ -1413,14 +1472,33 @@
                 `;
                 UI.showModal('Detail Hasil Jawaban', content);
             },
+            
+            async editResult(id) {
+                const filters = {
+                    action: 'getResults',
+                    tahunAjaran: document.getElementById('filterResultTahunAjaran').value,
+                    semester: document.getElementById('filterResultSemester').value,
+                    kodesoal: document.getElementById('filterResultCode').value,
+                    mataPelajaran: document.getElementById('filterResultSubject').value,
+                    kelas: document.getElementById('filterResultClass').value,
+                    namaLengkap: document.getElementById('filterResultStudent').value,
+                };
+                const cacheKey = AppState.cache.generateKey('results', filters);
+                const allFilteredResults = AppState.cache.get(cacheKey);
+                 if (!allFilteredResults) {
+                     UI.showNotification('Data cache tidak ditemukan, silakan filter ulang.', 'error');
+                     return;
+                }
+                const result = allFilteredResults.find(r => r.resultId === id);
 
-            async editResult(rowIndex) {
-                const result = AppState.currentlyDisplayed.results.find(r => r.rowIndex == rowIndex);
-                if (!result) return;
+                if (!result) {
+                     UI.showNotification('Data hasil ujian tidak ditemukan di cache.', 'error');
+                    return;
+                }
 
                 const content = `
                     <form id="editResultForm" class="space-y-4">
-                        <input type="hidden" name="rowIndex" value="${result.rowIndex}">
+                        <input type="hidden" name="id" value="${result.resultId}">
                         <p class="text-sm"><strong>Siswa:</strong> ${result.namaLengkap}</p>
                         <p class="text-sm"><strong>Soal No:</strong> ${result.noSoal}</p>
                         <p class="text-sm"><strong>Pertanyaan:</strong> ${result.pertanyaan}</p>
@@ -1439,131 +1517,85 @@
 
                 document.getElementById('editResultForm').addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    const newNilai = parseInt(e.target.nilai.value);
+                    const form = e.target;
+                    const resultId = form.id.value;
+                    const newNilai = parseInt(form.nilai.value);
                     const newStatus = newNilai > 0 ? 'benar' : 'salah';
                     
                     try {
-                        // Google Sheet Integration: Update the result in the sheet
-                        const response = await fetch(GOOGLE_SCRIPT_URL, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                action: 'updateResult',
-                                rowIndex: rowIndex,
-                                data: { nilai: newNilai, status: newStatus }
-                            })
+                        await callGoogleScript('POST', {
+                            action: 'updateResult',
+                            data: {
+                                resultId: resultId,
+                                nilai: newNilai,
+                                status: newStatus
+                            }
                         });
-                        const res = await response.json();
-                        if (res.status !== 'success') throw new Error(res.message);
+                        
+                        AppState.cache.clear(); // Clear cache to reflect changes
 
-                        // Firebase Integration: Recalculate final grade (remains the same)
+                        // Recalculate final grade in Firebase after updating the sheet
                         await this.recalculateFinalGrade(result.namaLengkap, result.kodesoal);
                         
                         UI.hideModal();
-                        UI.showNotification('Nilai berhasil diperbarui!', 'success');
+                        UI.showNotification('Nilai berhasil diperbarui di Google Sheet!', 'success');
                         document.getElementById('applyResultFilterBtn').click(); // Refresh view
                     } catch (error) {
-                        console.error("Error updating result/grade: ", error);
+                        console.error("Error updating grade: ", error);
                         UI.showNotification('Gagal memperbarui nilai!', 'error');
                     }
                 });
             },
             
-            async recalculateFinalGrade(studentName, examCode) {
-                 // 1. Get all questions for the exam to know the total count
-                const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', examCode).get();
-                const totalQuestionsForExam = questionsSnapshot.size;
-                if (totalQuestionsForExam === 0) return;
-
-                // 2. Fetch ALL results for that student for that exam from Google Sheets
-                const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getResults&namaLengkap=${encodeURIComponent(studentName)}&kodesoal=${encodeURIComponent(examCode)}`);
-                const result = await response.json();
-                if (result.status !== 'success') {
-                    console.error('Failed to fetch results for recalculation');
-                    return;
-                }
-                const studentResults = result.data;
-
-                // 3. Calculate total score
-                let totalScore = 0;
-                studentResults.forEach(r => {
-                    if (r.status !== 'perlu dinilai') {
-                        totalScore += parseInt(r.nilai) || 0;
-                    }
-                });
-                
-                const finalScore = Math.round(totalScore / totalQuestionsForExam);
-                const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
-
-                // 4. Find and update the summary grade in Firebase
-                const gradeQuery = await db.collection('grades')
-                    .where('namaSiswa', '==', studentName)
-                    .where('kodeSoal', '==', examCode)
-                    .limit(1).get();
-
-                if (!gradeQuery.empty) {
-                    const gradeDocId = gradeQuery.docs[0].id;
-                    await db.collection('grades').doc(gradeDocId).update({
-                        nilai: finalScore,
-                        grade: grade,
-                        keterangan: finalScore >= 70 ? 'Lulus' : 'Tidak Lulus'
-                    });
-                }
-            },
-
-            deleteResult(rowIndex) {
+            deleteResult(id) {
                 UI.showConfirmModal('Konfirmasi Hapus', 'Apakah Anda yakin ingin menghapus detail hasil ini dari Google Sheet?', async () => {
                     try {
-                        const response = await fetch(GOOGLE_SCRIPT_URL, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ action: 'deleteResult', rowIndex: rowIndex })
-                        });
-                        const res = await response.json();
-                        if (res.status !== 'success') throw new Error(res.message);
-                        
+                        await callGoogleScript('POST', { action: 'deleteResult', data: { resultId: id } });
+                        AppState.cache.clear(); // Clear cache to reflect changes
                         UI.showNotification('Hasil ujian berhasil dihapus!', 'success');
                         document.getElementById('applyResultFilterBtn').click(); // Refresh view
                     } catch (error) {
-                        console.error("Error deleting result: ", error);
                         UI.showNotification('Gagal menghapus hasil!', 'error');
                     }
                 });
             },
 
             renderFilteredResults(results) {
-                AppState.currentlyDisplayed.results = results; // Store for bulk operations
+                AppState.currentlyDisplayed.results = results; // Store for bulk delete/actions
                 const resultsTableBody = document.getElementById('resultsTableBody');
                 if (!resultsTableBody) return;
                 
-                results.sort((a, b) => a.noSoal - b.noSoal);
-
                 resultsTableBody.innerHTML = results.length === 0 ?
                     '<tr><td colspan="10" class="px-6 py-4 text-center text-gray-500">Tidak ada hasil ujian yang sesuai dengan filter</td></tr>' :
                     results.map((result, index) => {
+                        // The unique ID for a result is now `resultId` from Google Sheet
+                        const resultId = result.resultId; 
                         let actionButtons = '';
-                        if (result.status === 'perlu dinilai') {
+                        if (String(result.status) === 'perlu dinilai') {
                             actionButtons = `
-                                <button id="grade-btn-${result.rowIndex}" onclick="Management.gradeWithAI('${result.rowIndex}')" class="bg-purple-600 text-white px-3 py-2 rounded-md hover:bg-purple-700 text-xs">
+                                <button id="grade-btn-${resultId}" onclick="Management.gradeWithAI('${resultId}')" class="bg-purple-600 text-white px-3 py-2 rounded-md hover:bg-purple-700 text-xs">
                                     <i class="fas fa-magic mr-1"></i> Nilai AI
+                                </button>
+                                 <button onclick="Management.editResult('${resultId}')" class="text-green-600 hover:text-green-900 ml-2">
+                                    <i class="fas fa-edit"></i>
                                 </button>
                             `;
                         } else {
                             actionButtons = `
-                                <button onclick="Management.viewResult('${result.rowIndex}')" class="text-blue-600 hover:text-blue-900 mr-3">
+                                <button onclick="Management.viewResult('${resultId}')" class="text-blue-600 hover:text-blue-900 mr-3">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                                <button onclick="Management.editResult('${result.rowIndex}')" class="text-green-600 hover:text-green-900 mr-3">
+                                <button onclick="Management.editResult('${resultId}')" class="text-green-600 hover:text-green-900 mr-3">
                                     <i class="fas fa-edit"></i>
                                 </button>
-                                <button onclick="Management.deleteResult('${result.rowIndex}')" class="text-red-600 hover:text-red-900">
+                                <button onclick="Management.deleteResult('${resultId}')" class="text-red-600 hover:text-red-900">
                                     <i class="fas fa-trash"></i>
                                 </button>
                             `;
                         }
                         return `
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1 + (AppState.pagination.results.currentPage - 1) * AppState.itemsPerPage}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${result.kelas}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${result.kodesoal}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${result.namaLengkap}</td>
@@ -1582,7 +1614,24 @@
             },
             
             async gradeAllWithAI() {
-                const resultsToGrade = AppState.currentlyDisplayed.results.filter(r => r.status === 'perlu dinilai');
+                const filters = {
+                    action: 'getResults',
+                    tahunAjaran: document.getElementById('filterResultTahunAjaran').value,
+                    semester: document.getElementById('filterResultSemester').value,
+                    kodesoal: document.getElementById('filterResultCode').value,
+                    mataPelajaran: document.getElementById('filterResultSubject').value,
+                    kelas: document.getElementById('filterResultClass').value,
+                    namaLengkap: document.getElementById('filterResultStudent').value,
+                };
+                const cacheKey = AppState.cache.generateKey('results', filters);
+                const allFilteredResults = AppState.cache.get(cacheKey);
+
+                if (!allFilteredResults) {
+                    UI.showNotification('Tidak ada data yang dimuat. Silakan filter terlebih dahulu.', 'info');
+                    return;
+                }
+                
+                const resultsToGrade = allFilteredResults.filter(r => String(r.status) === 'perlu dinilai');
 
                 if (resultsToGrade.length === 0) {
                     UI.showNotification('Tidak ada jawaban yang perlu dinilai pada filter ini.', 'info');
@@ -1591,41 +1640,66 @@
 
                 UI.showConfirmModal(
                     'Konfirmasi Penilaian AI',
-                    `Anda akan menilai <strong>${resultsToGrade.length}</strong> jawaban dengan AI. Proses ini mungkin memakan waktu. Lanjutkan?`,
+                    `Anda akan menilai <strong>${resultsToGrade.length}</strong> jawaban dengan AI. Proses ini akan mengirim data ke Google Sheet. Lanjutkan?`,
                     async () => {
                         Swal.fire({
                             title: 'Menilai dengan AI...',
                             html: `Memproses <strong>0</strong> dari <strong>${resultsToGrade.length}</strong> jawaban.`,
                             allowOutsideClick: false,
-                            didOpen: () => Swal.showLoading()
+                            didOpen: () => { Swal.showLoading(); }
                         });
 
+                        const questionCache = {};
                         const updates = [];
-                        const affectedGrades = new Set(); 
+                        let processedCount = 0;
+                        const affectedGrades = new Set(); // To store unique keys for recalculation
 
-                        for (const [index, result] of resultsToGrade.entries()) {
+                        for (const result of resultsToGrade) {
                             try {
-                                const gradingResult = await GeminiHelper.gradeAnswer(result.pertanyaan, result.correctAnswer, result.jawabanSiswa);
+                                if (!questionCache[result.kodesoal]) {
+                                    const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', result.kodesoal).get();
+                                    if (questionsSnapshot.empty) continue;
+                                    
+                                    let questions = questionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    const typeOrder = { 'pilihan_ganda': 1, 'isian': 2, 'uraian': 3 };
+                                    questions.sort((a, b) => {
+                                        const typeA = typeOrder[a.tipe] || 99;
+                                        const typeB = typeOrder[b.tipe] || 99;
+                                        if (typeA !== typeB) return typeA - typeB;
+                                        const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
+                                        const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
+                                        return timeA - timeB;
+                                    });
+                                    questionCache[result.kodesoal] = questions;
+                                }
+
+                                const questions = questionCache[result.kodesoal];
+                                const question = questions[result.noSoal - 1];
+                                if (!question || !question.jawabanBenar) continue;
+
+                                const gradingResult = await GeminiHelper.gradeAnswer(question.pertanyaan, question.jawabanBenar, result.jawabanSiswa);
+
                                 if (gradingResult) {
                                     const newNilai = gradingResult.nilai;
                                     const newStatus = newNilai > 0 ? 'benar' : 'salah';
-                                    updates.push({ rowIndex: result.rowIndex, data: { nilai: newNilai, status: newStatus } });
+                                    updates.push({ resultId: result.resultId, nilai: newNilai, status: newStatus });
                                     affectedGrades.add(`${result.namaLengkap}__${result.kodesoal}`);
                                 }
                             } catch (error) {
-                                console.error(`Failed to grade result for row ${result.rowIndex}:`, error);
+                                console.error(`Failed to grade result ID ${result.resultId}:`, error);
                             }
-                            Swal.update({ html: `Memproses <strong>${index + 1}</strong> dari <strong>${resultsToGrade.length}</strong> jawaban.` });
+
+                            processedCount++;
+                            Swal.update({ html: `Memproses <strong>${processedCount}</strong> dari <strong>${resultsToGrade.length}</strong> jawaban.` });
                         }
 
+                        // Batch update results to Google Sheet
                         if (updates.length > 0) {
-                             await fetch(GOOGLE_SCRIPT_URL, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'batchUpdateResults', updates: updates })
-                            });
+                            await callGoogleScript('POST', { action: 'updateResults', data: updates });
                         }
+                        AppState.cache.clear(); // Clear cache to reflect changes
 
+                        // Recalculate final grades for affected students
                         Swal.update({ html: 'Menghitung ulang nilai akhir...' });
                         
                         for (const gradeKey of affectedGrades) {
@@ -1634,57 +1708,68 @@
                         }
 
                         Swal.close();
-                        UI.showNotification(`${updates.length} jawaban berhasil dinilai dengan AI.`, 'success');
+                        UI.showNotification(`${updates.length} jawaban berhasil dinilai dan dikirim ke Google Sheet.`, 'success');
                         document.getElementById('applyResultFilterBtn').click(); // Refresh the view
                     }
                 );
             },
 
-            async gradeWithAI(rowIndex) {
-                const button = document.getElementById(`grade-btn-${rowIndex}`);
+            async gradeWithAI(id) {
+                const button = document.getElementById(`grade-btn-${id}`);
                 if (!button) return;
 
                 button.disabled = true;
                 button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menilai...';
 
                 try {
-                    const resultData = AppState.currentlyDisplayed.results.find(r => r.rowIndex == rowIndex);
+                    const filters = {
+                        action: 'getResults',
+                        tahunAjaran: document.getElementById('filterResultTahunAjaran').value,
+                        semester: document.getElementById('filterResultSemester').value,
+                        kodesoal: document.getElementById('filterResultCode').value,
+                        mataPelajaran: document.getElementById('filterResultSubject').value,
+                        kelas: document.getElementById('filterResultClass').value,
+                        namaLengkap: document.getElementById('filterResultStudent').value,
+                    };
+                    const cacheKey = AppState.cache.generateKey('results', filters);
+                    const allFilteredResults = AppState.cache.get(cacheKey);
+
+                    if (!allFilteredResults) {
+                        throw new Error("Data cache tidak ditemukan. Silakan filter ulang.");
+                    }
+                    
+                    const resultData = allFilteredResults.find(r => r.resultId === id);
                     if (!resultData) throw new Error("Data hasil ujian tidak ditemukan.");
 
-                    // We need the correct answer. It should be part of the result data from the sheet.
-                    if (!resultData.correctAnswer) {
-                        // If not, fetch from Firebase as a fallback (less efficient)
-                        const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', resultData.kodesoal).get();
-                        if (questionsSnapshot.empty) throw new Error("Data soal tidak ditemukan.");
-                        
-                        let questions = questionsSnapshot.docs.map(doc => doc.data());
-                        const typeOrder = { 'pilihan_ganda': 1, 'isian': 2, 'uraian': 3 };
-                        questions.sort((a, b) => (typeOrder[a.tipe] || 99) - (typeOrder[b.tipe] || 99));
+                    const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', resultData.kodesoal).get();
+                    if (questionsSnapshot.empty) throw new Error("Data soal tidak ditemukan.");
+                    
+                    let questions = questionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const typeOrder = { 'pilihan_ganda': 1, 'isian': 2, 'uraian': 3 };
+                    questions.sort((a, b) => {
+                        const typeA = typeOrder[a.tipe] || 99;
+                        const typeB = typeOrder[b.tipe] || 99;
+                        if (typeA !== typeB) return typeA - typeB;
+                        const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
+                        const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
+                        return timeA - timeB;
+                    });
 
-                        const question = questions[resultData.noSoal - 1];
-                        if (!question || !question.jawabanBenar) throw new Error(`Kunci jawaban untuk soal no. ${resultData.noSoal} tidak ditemukan.`);
-                        resultData.correctAnswer = question.jawabanBenar;
-                    }
-
-                    const gradingResult = await GeminiHelper.gradeAnswer(resultData.pertanyaan, resultData.correctAnswer, resultData.jawabanSiswa);
+                    const question = questions[resultData.noSoal - 1];
+                    if (!question || !question.jawabanBenar) throw new Error(`Kunci jawaban untuk soal no. ${resultData.noSoal} tidak ditemukan.`);
+                    
+                    const gradingResult = await GeminiHelper.gradeAnswer(question.pertanyaan, question.jawabanBenar, resultData.jawabanSiswa);
                     if (!gradingResult) throw new Error("Gagal mendapatkan nilai dari AI.");
                     
                     const newNilai = gradingResult.nilai;
                     const newStatus = newNilai > 0 ? 'benar' : 'salah';
 
-                    // Update result in Google Sheet
-                    const response = await fetch(GOOGLE_SCRIPT_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'updateResult',
-                            rowIndex: rowIndex,
-                            data: { nilai: newNilai, status: newStatus }
-                        })
+                    await callGoogleScript('POST', {
+                        action: 'updateResult',
+                        data: { resultId: id, nilai: newNilai, status: newStatus }
                     });
-                    const res = await response.json();
-                    if (res.status !== 'success') throw new Error(res.message);
-
+                    AppState.cache.clear(); // Clear cache
+                    
                     await this.recalculateFinalGrade(resultData.namaLengkap, resultData.kodesoal);
                     
                     UI.showNotification(`Penilaian berhasil! Nilai: ${newNilai}. Feedback: ${gradingResult.feedback}`, 'success');
@@ -1694,6 +1779,55 @@
                     UI.showNotification(error.message, 'error');
                 } finally {
                     document.getElementById('applyResultFilterBtn').click();
+                }
+            },
+
+            async recalculateFinalGrade(studentName, examCode) {
+                try {
+                    // Fetch all results for this student and exam from Google Sheets
+                    const result = await callGoogleScript('GET', {
+                        action: 'getResults',
+                        namaLengkap: studentName,
+                        kodesoal: examCode
+                    });
+            
+                    if (result.status !== 'success') {
+                        throw new Error('Could not fetch student results from Google Sheet for recalculation.');
+                    }
+                    
+                    const studentResults = result.data;
+
+                    // Fetch total questions from Firebase
+                    const questionsSnapshot = await db.collection('examQuestions').where('kode', '==', examCode).get();
+                    const totalQuestionsForExam = questionsSnapshot.size;
+                    if (totalQuestionsForExam === 0) return;
+
+                    let totalScore = 0;
+                    studentResults.forEach(r => {
+                        if (r.status !== 'perlu dinilai') {
+                            totalScore += Number(r.nilai) || 0;
+                        }
+                    });
+                    
+                    const finalScore = Math.round(totalScore / totalQuestionsForExam);
+                    const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
+                    
+                    const gradeQuery = await db.collection('grades')
+                        .where('namaSiswa', '==', studentName)
+                        .where('kodeSoal', '==', examCode)
+                        .limit(1).get();
+
+                    if (!gradeQuery.empty) {
+                        const gradeDocId = gradeQuery.docs[0].id;
+                        await db.collection('grades').doc(gradeDocId).update({
+                            nilai: finalScore,
+                            grade: grade,
+                            keterangan: finalScore >= 70 ? 'Lulus' : 'Tidak Lulus'
+                        });
+                        console.log(`Final grade updated for ${studentName} on exam ${examCode}. New score: ${finalScore}`);
+                    }
+                } catch (error) {
+                    console.error(`Failed to recalculate final grade for ${studentName}:`, error);
                 }
             },
 
@@ -1756,8 +1890,10 @@
                             grade: newGrade,
                             keterangan: newKeterangan
                         });
+                        AppState.cache.clear(); // Clear cache
                         UI.hideModal();
                         UI.showNotification('Nilai akhir berhasil diperbarui!', 'success');
+                        document.getElementById('applyGradeFilterBtn').click();
                     } catch (error) {
                         UI.showNotification('Gagal memperbarui nilai!', 'error');
                     }
@@ -1769,7 +1905,9 @@
                     try {
                         // Firebase Integration: Delete grade
                         await db.collection('grades').doc(id).delete();
+                        AppState.cache.clear(); // Clear cache
                         UI.showNotification('Data nilai berhasil dihapus!', 'success');
+                        document.getElementById('applyGradeFilterBtn').click();
                     } catch (error) {
                         UI.showNotification('Gagal menghapus data nilai!', 'error');
                     }
@@ -1781,14 +1919,11 @@
                 const gradesTableBody = document.getElementById('gradesTableBody');
                 if (!gradesTableBody) return;
 
-                // Sort grades by student name
-                grades.sort((a, b) => a.namaSiswa.localeCompare(b.namaSiswa));
-
                 gradesTableBody.innerHTML = grades.length === 0 ?
                     '<tr><td colspan="10" class="px-6 py-4 text-center text-gray-500">Belum ada data nilai yang sesuai dengan filter</td></tr>' :
                     grades.map((grade, index) => `
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${index + 1 + (AppState.pagination.grades.currentPage - 1) * AppState.itemsPerPage}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${grade.kelas}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${grade.namaSiswa}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${grade.kodeSoal}</td>
@@ -1818,6 +1953,21 @@
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
 
+                const filters = {
+                    tahunAjaran: document.getElementById('filterTahunAjaran').value,
+                    semester: document.getElementById('filterSemester').value,
+                    kelas: document.getElementById('filterKelas').value,
+                    mataPelajaran: document.getElementById('filterSubject').value,
+                    kode: document.getElementById('filterCode').value
+                };
+                const cacheKey = AppState.cache.generateKey('questions', filters);
+                const allFilteredQuestions = AppState.cache.get(cacheKey);
+
+                if (!allFilteredQuestions || allFilteredQuestions.length === 0) {
+                    UI.showNotification('Tidak ada data soal untuk diunduh.', 'info');
+                    return;
+                }
+
                 doc.text("Laporan Daftar Soal", 14, 16);
                 doc.setFontSize(10);
                 doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
@@ -1825,10 +1975,7 @@
                 const tableColumn = ["No", "Kode Soal", "Kelas", "Mata Pelajaran", "Tipe", "Pertanyaan"];
                 const tableRows = [];
 
-                // Use the already filtered and sorted data from the state
-                const filteredQuestions = AppState.currentlyDisplayed.questions;
-
-                filteredQuestions.forEach((question, index) => {
+                allFilteredQuestions.forEach((question, index) => {
                     let questionText = question.pertanyaan;
                     if (question.tipe === 'pilihan_ganda' && question.pilihan) {
                         const options = question.pilihan.map((opt, i) => `${String.fromCharCode(65 + i)}. ${opt}`).join('\n');
@@ -1861,6 +2008,23 @@
             async downloadResultsPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
+                const filters = {
+                    action: 'getResults',
+                    tahunAjaran: document.getElementById('filterResultTahunAjaran').value,
+                    semester: document.getElementById('filterResultSemester').value,
+                    kodesoal: document.getElementById('filterResultCode').value,
+                    mataPelajaran: document.getElementById('filterResultSubject').value,
+                    kelas: document.getElementById('filterResultClass').value,
+                    namaLengkap: document.getElementById('filterResultStudent').value,
+                };
+                const cacheKey = AppState.cache.generateKey('results', filters);
+                const allFilteredResults = AppState.cache.get(cacheKey);
+
+                if (!allFilteredResults || allFilteredResults.length === 0) {
+                    UI.showNotification('Tidak ada data hasil untuk diunduh.', 'info');
+                    return;
+                }
+
                 doc.text("Laporan Hasil Ujian", 14, 16);
                 doc.setFontSize(10);
                 doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
@@ -1868,9 +2032,7 @@
                 const tableColumn = ["No", "Kelas", "Kode Soal", "Nama Siswa", "No. Soal", "Status", "Nilai"];
                 const tableRows = [];
 
-                const filteredResults = AppState.currentlyDisplayed.results;
-                
-                filteredResults.forEach((result, index) => {
+                allFilteredResults.forEach((result, index) => {
                     tableRows.push([
                         index + 1, result.kelas, result.kodesoal, result.namaLengkap,
                         result.noSoal, result.status, result.nilai
@@ -1885,6 +2047,22 @@
             async downloadGradesPDF() {
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
+                const filters = {
+                    tahunAjaran: document.getElementById('filterGradeTahunAjaran').value,
+                    semester: document.getElementById('filterGradeSemester').value,
+                    kodeSoal: document.getElementById('filterGradeCode').value,
+                    mataPelajaran: document.getElementById('filterGradeSubject').value,
+                    kelas: document.getElementById('filterGradeClass').value,
+                    namaSiswa: document.getElementById('filterGradeStudent').value
+                };
+                const cacheKey = AppState.cache.generateKey('grades', filters);
+                const allFilteredGrades = AppState.cache.get(cacheKey);
+
+                if (!allFilteredGrades || allFilteredGrades.length === 0) {
+                    UI.showNotification('Tidak ada data nilai untuk diunduh.', 'info');
+                    return;
+                }
+
                 doc.text("Laporan Daftar Nilai", 14, 16);
                 doc.setFontSize(10);
                 doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
@@ -1892,9 +2070,7 @@
                 const tableColumn = ["No", "Kelas", "Nama Siswa", "Kode Soal", "Mata Pelajaran", "Nilai", "Grade", "Keterangan"];
                 const tableRows = [];
 
-                const filteredGrades = AppState.currentlyDisplayed.grades;
-
-                filteredGrades.forEach((grade, index) => {
+                allFilteredGrades.forEach((grade, index) => {
                     tableRows.push([
                         index + 1, grade.kelas, grade.namaSiswa, grade.kodeSoal,
                         grade.mataPelajaran, grade.nilai, grade.grade, grade.keterangan
@@ -1907,19 +2083,29 @@
             },
 
             deleteFilteredQuestions() {
-                const allFilteredQuestions = AppState.currentlyDisplayed.questions;
-                let questionsToDelete;
+                 const filters = {
+                    tahunAjaran: document.getElementById('filterTahunAjaran').value,
+                    semester: document.getElementById('filterSemester').value,
+                    kelas: document.getElementById('filterKelas').value,
+                    mataPelajaran: document.getElementById('filterSubject').value,
+                    kode: document.getElementById('filterCode').value
+                };
+                const cacheKey = AppState.cache.generateKey('questions', filters);
+                const allFilteredQuestions = AppState.cache.get(cacheKey);
 
+                if (!allFilteredQuestions) {
+                     UI.showNotification('Tidak ada data yang dimuat untuk dihapus.', 'info');
+                    return;
+                }
+                
+                let questionsToDelete;
                 if (AppState.currentUser.role === 'admin') {
-                    // Admin can delete all filtered questions
                     questionsToDelete = allFilteredQuestions;
                 } else if (AppState.currentUser.role === 'guru') {
-                    // Teacher can only delete their own questions or orphaned ones (created before owner tracking)
                     questionsToDelete = allFilteredQuestions.filter(question => 
                         (question.createdBy && question.createdBy === AppState.currentUser.nama) || !question.createdBy
                     );
                 } else {
-                    // Other roles cannot delete in bulk
                     questionsToDelete = [];
                 }
                 
@@ -1938,7 +2124,9 @@
                         });
                         try {
                             await batch.commit();
+                            AppState.cache.clear(); // Clear cache
                             UI.showNotification('Soal yang Anda pilih berhasil dihapus!', 'success');
+                            document.getElementById('applyFilterBtn').click();
                         } catch (error) {
                             UI.showNotification('Gagal menghapus soal!', 'error');
                             console.error("Error deleting filtered questions: ", error);
@@ -1948,38 +2136,52 @@
             },
 
             deleteFilteredResults() {
-                const resultsToDelete = AppState.currentlyDisplayed.results;
-                if (resultsToDelete.length === 0) {
+                const filters = {
+                    action: 'getResults',
+                    tahunAjaran: document.getElementById('filterResultTahunAjaran').value,
+                    semester: document.getElementById('filterResultSemester').value,
+                    kodesoal: document.getElementById('filterResultCode').value,
+                    mataPelajaran: document.getElementById('filterResultSubject').value,
+                    kelas: document.getElementById('filterResultClass').value,
+                    namaLengkap: document.getElementById('filterResultStudent').value,
+                };
+                const cacheKey = AppState.cache.generateKey('results', filters);
+                const resultsToDelete = AppState.cache.get(cacheKey);
+
+                if (!resultsToDelete || resultsToDelete.length === 0) {
                     UI.showNotification('Tidak ada hasil ujian untuk dihapus sesuai filter.', 'info');
                     return;
                 }
                 UI.showConfirmModal(
                     'Konfirmasi Hapus Massal', 
-                    `Anda akan menghapus **${resultsToDelete.length}** data hasil ujian secara permanen dari Google Sheet. Aksi ini tidak dapat dibatalkan. Lanjutkan?`, 
+                    `Anda akan menghapus **${resultsToDelete.length}** data hasil ujian dari Google Sheet secara permanen. Lanjutkan?`, 
                     async () => {
-                        const rowIndexes = resultsToDelete.map(r => r.rowIndex);
+                        const resultIds = resultsToDelete.map(r => r.resultId);
                         try {
-                             const response = await fetch(GOOGLE_SCRIPT_URL, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ action: 'batchDeleteResults', rowIndexes: rowIndexes })
-                            });
-                            const res = await response.json();
-                            if (res.status !== 'success') throw new Error(res.message);
-
+                            await callGoogleScript('POST', { action: 'deleteResults', data: { resultIds: resultIds } });
+                            AppState.cache.clear(); // Clear cache
                             UI.showNotification('Hasil ujian yang difilter berhasil dihapus!', 'success');
-                            document.getElementById('applyResultFilterBtn').click();
+                            document.getElementById('applyResultFilterBtn').click(); // Refresh
                         } catch (error) {
                             UI.showNotification('Gagal menghapus hasil ujian!', 'error');
-                            console.error("Error deleting filtered results: ", error);
                         }
                     }
                 );
             },
 
             deleteFilteredGrades() {
-                const gradesToDelete = AppState.currentlyDisplayed.grades;
-                if (gradesToDelete.length === 0) {
+                const filters = {
+                    tahunAjaran: document.getElementById('filterGradeTahunAjaran').value,
+                    semester: document.getElementById('filterGradeSemester').value,
+                    kodeSoal: document.getElementById('filterGradeCode').value,
+                    mataPelajaran: document.getElementById('filterGradeSubject').value,
+                    kelas: document.getElementById('filterGradeClass').value,
+                    namaSiswa: document.getElementById('filterGradeStudent').value
+                };
+                const cacheKey = AppState.cache.generateKey('grades', filters);
+                const gradesToDelete = AppState.cache.get(cacheKey);
+
+                if (!gradesToDelete || gradesToDelete.length === 0) {
                     UI.showNotification('Tidak ada daftar nilai untuk dihapus sesuai filter.', 'info');
                     return;
                 }
@@ -1993,7 +2195,9 @@
                         });
                         try {
                             await batch.commit();
+                            AppState.cache.clear(); // Clear cache
                             UI.showNotification('Daftar nilai yang difilter berhasil dihapus!', 'success');
+                             document.getElementById('applyGradeFilterBtn').click(); // Refresh
                         } catch (error) {
                             UI.showNotification('Gagal menghapus daftar nilai!', 'error');
                             console.error("Error deleting filtered grades: ", error);
@@ -2008,7 +2212,7 @@
         // =================================================================
         const GeminiHelper = {
             async generateQuestions(promptData) {
-                const apiKey = process.env.API_KEY; 
+                const apiKey = "AIzaSyD-7OfbPmbjMBHj-eGPyFQJOpMQSH0fgzI"; // API key is handled by the environment
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
 
                 const systemPrompt = `Anda adalah asisten pembuatan soal untuk guru SD. Buat soal berdasarkan topik, mata pelajaran, dan kelas yang diberikan. Pastikan jawaban pilihan ganda bervariasi dan pengecohnya masuk akal. Jangan membuat soal yang terlalu sulit untuk level SD. Selalu berikan respon dalam format JSON yang valid sesuai skema yang diminta, dan sertakan tipe soal ('pilihan_ganda', 'isian', 'uraian') untuk setiap soal.`;
@@ -2092,7 +2296,7 @@
             },
             
             async gradeAnswer(questionText, correctAnswer, studentAnswer) {
-                const apiKey = process.env.API_KEY;
+                const apiKey = "AIzaSyD-7OfbPmbjMBHj-eGPyFQJOpMQSH0fgzI";
                 const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
                 
                 const systemPrompt = "Anda adalah seorang guru ahli yang memeriksa jawaban ujian. Tugas Anda adalah menilai jawaban siswa berdasarkan pertanyaan dan kunci jawaban yang diberikan. Berikan respons HANYA dalam format JSON yang valid.";
@@ -2174,6 +2378,7 @@
                 const user = AppState.users.find(u => u.username === username && u.password === password);
                 if (user) {
                     AppState.currentUser = user;
+                    // Firebase Persistence: Save user to localStorage
                     localStorage.setItem('cbtCurrentUser', JSON.stringify(user));
                     return { success: true, user: user };
                 }
@@ -2182,6 +2387,8 @@
 
             logout() {
                 AppState.currentUser = null;
+                AppState.cache.clear(); // Clear cache on logout
+                // Firebase Persistence: Remove user from localStorage
                 localStorage.removeItem('cbtCurrentUser');
                 this.clearExamTimer();
                 UI.showLogin();
@@ -2194,9 +2401,11 @@
                 }
             },
             
+            // Firebase Persistence: Check for persisted user on load
             checkSession() {
                 const persistedUser = localStorage.getItem('cbtCurrentUser');
                 if (persistedUser) {
+                    // Make sure the user still exists in the fetched list
                     const parsedUser = JSON.parse(persistedUser);
                     const userExists = AppState.users.some(u => u.username === parsedUser.username);
 
@@ -2204,6 +2413,7 @@
                         AppState.currentUser = parsedUser;
                         UI.showDashboard();
                     } else {
+                        // User might have been removed from the source
                         this.logout();
                     }
 
@@ -2282,6 +2492,7 @@
                 const sidebar = document.getElementById('dashboardSidebar');
                 const header = document.getElementById('dashboardHeader');
 
+                // All roles (admin, guru, siswa) will now use the header navigation
                 sidebar.classList.add('hidden');
                 header.classList.remove('hidden');
                 this.setupDashboardHeader();
@@ -2660,7 +2871,7 @@
                         </div></div>`;
             },
 
-            showQuestionManagement() {
+            async showQuestionManagement() {
                 const content = document.getElementById('dashboardContent');
                 const isTeacher = AppState.currentUser.role === 'guru';
                 let classOptions = '';
@@ -2691,50 +2902,19 @@
                             <div><label class="block text-sm font-medium text-gray-700 mb-2">Kode Soal</label><input type="text" id="filterCode" placeholder="Masukkan kode soal" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></div>
                             <div class="flex items-end"><button id="applyFilterBtn" class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"><i class="fas fa-search mr-2"></i>Filter</button></div>
                         </div></div>
-                        <div id="questionsList" class="space-y-4"><div class="text-center p-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2 text-gray-600">Memuat soal...</p></div></div></div>`;
+                        <div id="questionsList" class="space-y-4"></div>
+                        <div id="questionsPagination" class="flex justify-between items-center mt-6"></div>
+                    </div>`;
                 
-                // Firebase Integration: Real-time listener for questions
                 document.getElementById('applyFilterBtn').addEventListener('click', () => {
-                    const tahunAjaran = document.getElementById('filterTahunAjaran').value;
-                    const semester = document.getElementById('filterSemester').value;
-                    const kelas = document.getElementById('filterKelas').value;
-                    const mataPelajaran = document.getElementById('filterSubject').value;
-                    const kode = document.getElementById('filterCode').value;
-
-                    let query = db.collection('examQuestions');
-                    
-                    query.onSnapshot(snapshot => {
-                        if (!AppState.currentUser) return; // FIX: Guard against null user
-                        let questions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                        if (AppState.currentUser.role === 'guru' && AppState.currentUser.kelas) {
-                            const teacherGrade = AppState.currentUser.kelas.charAt(0);
-                            questions = questions.filter(q => q.kelas && q.kelas.startsWith(teacherGrade));
-                        }
-                        
-                        if (tahunAjaran) {
-                            questions = questions.filter(q => q.tahunAjaran === tahunAjaran);
-                        }
-                        if (semester) {
-                            questions = questions.filter(q => q.semester === semester);
-                        }
-                        if (kelas) {
-                            questions = questions.filter(q => q.kelas === kelas);
-                        }
-                        if (mataPelajaran) {
-                            questions = questions.filter(q => q.mataPelajaran === mataPelajaran);
-                        }
-                        if (kode) {
-                            questions = questions.filter(q => q.kode && q.kode.toLowerCase().includes(kode.toLowerCase()));
-                        }
-                        Management.renderFilteredQuestions(questions);
-                    }, error => console.error(error));
+                    AppState.pagination.questions.currentPage = 1; // Reset to first page on new filter
+                    UI.loadAndRenderPaginatedQuestions();
                 });
                 // Initial load
-                document.getElementById('applyFilterBtn').click();
+                UI.loadAndRenderPaginatedQuestions();
             },
 
-            showResultManagement() {
+            async showResultManagement() {
                 const content = document.getElementById('dashboardContent');
                 const isTeacher = AppState.currentUser.role === 'guru';
                 
@@ -2757,51 +2937,22 @@
                             <div><label class="block text-sm font-medium text-gray-700 mb-2">Nama Siswa</label><select id="filterResultStudent" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">Semua Siswa</option></select></div>
                             <div class="flex items-end col-span-full md:col-span-1"><button id="applyResultFilterBtn" class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"><i class="fas fa-search mr-2"></i>Filter</button></div>
                         </div></div>
-                        <div class="bg-white rounded-lg shadow overflow-hidden"><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No.</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kelas</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kode Soal</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Lengkap</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. Soal</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pertanyaan</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jawaban Siswa</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th></tr></thead><tbody id="resultsTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div></div></div>`;
+                        <div class="bg-white rounded-lg shadow overflow-hidden"><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No.</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kelas</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kode Soal</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Lengkap</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. Soal</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pertanyaan</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Jawaban Siswa</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th></tr></thead><tbody id="resultsTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div></div>
+                        <div id="resultsPagination" class="flex justify-between items-center mt-6"></div>
+                    </div>`;
                 
                 if (isTeacher) document.getElementById('filterResultClass').value = AppState.currentUser.kelas;
                 
                 UI.populateStudentFilter('filterResultClass', 'filterResultStudent');
 
-                document.getElementById('applyResultFilterBtn').addEventListener('click', async () => {
-                    const tableBody = document.getElementById('resultsTableBody');
-                    tableBody.innerHTML = '<tr><td colspan="10" class="px-6 py-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat data hasil ujian...</td></tr>';
-
-                    try {
-                        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getResults`);
-                        const result = await response.json();
-
-                        if (result.status !== 'success') {
-                            throw new Error(result.message || 'Gagal memuat data dari Google Sheet.');
-                        }
-                        
-                        let allResults = result.data;
-                        const tahunAjaran = document.getElementById('filterResultTahunAjaran').value;
-                        const semester = document.getElementById('filterResultSemester').value;
-                        const kodesoal = document.getElementById('filterResultCode').value;
-                        const mataPelajaran = document.getElementById('filterResultSubject').value;
-                        const kelas = document.getElementById('filterResultClass').value;
-                        const namaLengkap = document.getElementById('filterResultStudent').value;
-
-                        // Client-side filtering
-                        if (tahunAjaran) allResults = allResults.filter(r => r.tahunAjaran === tahunAjaran);
-                        if (semester) allResults = allResults.filter(r => r.semester === semester);
-                        if (kelas) allResults = allResults.filter(r => r.kelas === kelas);
-                        if (mataPelajaran) allResults = allResults.filter(r => r.mataPelajaran === mataPelajaran);
-                        if (namaLengkap) allResults = allResults.filter(r => r.namaLengkap === namaLengkap);
-                        if (kodesoal) allResults = allResults.filter(r => r.kodesoal.toLowerCase().includes(kodesoal.toLowerCase()));
-
-                        Management.renderFilteredResults(allResults);
-
-                    } catch(error) {
-                        console.error('Error fetching results:', error);
-                        tableBody.innerHTML = `<tr><td colspan="10" class="px-6 py-4 text-center text-red-500">Error: ${error.message}</td></tr>`;
-                    }
+                document.getElementById('applyResultFilterBtn').addEventListener('click', () => {
+                    AppState.pagination.results.currentPage = 1; // Reset to first page
+                    UI.loadAndRenderPaginatedResults();
                 });
-                document.getElementById('applyResultFilterBtn').click();
+                UI.loadAndRenderPaginatedResults();
             },
 
-            showGradeManagement() {
+            async showGradeManagement() {
                 const content = document.getElementById('dashboardContent');
                 const isTeacher = AppState.currentUser.role === 'guru';
 
@@ -2823,46 +2974,19 @@
                             <div><label class="block text-sm font-medium text-gray-700 mb-2">Nama Siswa</label><select id="filterGradeStudent" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">Semua Siswa</option></select></div>
                             <div class="flex items-end col-span-full md:col-span-1"><button id="applyGradeFilterBtn" class="w-full bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"><i class="fas fa-search mr-2"></i>Filter</button></div>
                         </div></div>
-                        <div class="bg-white rounded-lg shadow overflow-hidden"><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No.</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kelas</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Siswa</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kode Soal</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mata Pelajaran</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Keterangan</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waktu Selesai</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th></tr></thead><tbody id="gradesTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div></div></div>`;
+                        <div class="bg-white rounded-lg shadow overflow-hidden"><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No.</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kelas</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Siswa</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kode Soal</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mata Pelajaran</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nilai</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Grade</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Keterangan</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waktu Selesai</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th></tr></thead><tbody id="gradesTableBody" class="bg-white divide-y divide-gray-200"></tbody></table></div></div>
+                        <div id="gradesPagination" class="flex justify-between items-center mt-6"></div>
+                    </div>`;
                 
                 if (isTeacher) document.getElementById('filterGradeClass').value = AppState.currentUser.kelas;
 
                 UI.populateStudentFilter('filterGradeClass', 'filterGradeStudent');
 
                 document.getElementById('applyGradeFilterBtn').addEventListener('click', () => {
-                    let query = db.collection('grades');
-                    const tahunAjaran = document.getElementById('filterGradeTahunAjaran').value;
-                    const semester = document.getElementById('filterGradeSemester').value;
-                    const kodeSoal = document.getElementById('filterGradeCode').value;
-                    const mataPelajaran = document.getElementById('filterGradeSubject').value;
-                    const kelas = document.getElementById('filterGradeClass').value;
-                    const namaSiswa = document.getElementById('filterGradeStudent').value;
-
-                    query.onSnapshot(snapshot => {
-                        if (!AppState.currentUser) return; // FIX: Guard against null user
-                        let grades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        if (tahunAjaran) {
-                            grades = grades.filter(g => g.tahunAjaran === tahunAjaran);
-                        }
-                        if (semester) {
-                            grades = grades.filter(g => g.semester === semester);
-                        }
-                        if (kelas) {
-                            grades = grades.filter(g => g.kelas === kelas);
-                        }
-                        if (mataPelajaran) {
-                            grades = grades.filter(g => g.mataPelajaran === mataPelajaran);
-                        }
-                        if (namaSiswa) {
-                            grades = grades.filter(g => g.namaSiswa === namaSiswa);
-                        }
-                        if (kodeSoal) {
-                            grades = grades.filter(g => g.kodeSoal.toLowerCase().includes(kodeSoal.toLowerCase()));
-                        }
-                        Management.renderFilteredGrades(grades);
-                    });
+                    AppState.pagination.grades.currentPage = 1; // Reset to first page
+                    UI.loadAndRenderPaginatedGrades();
                 });
-                document.getElementById('applyGradeFilterBtn').click();
+                UI.loadAndRenderPaginatedGrades();
             },
 
             showStudentResults() {
@@ -2923,28 +3047,25 @@
                     </div>`;
                 
                 document.getElementById('applyStudentResultFilterBtn').addEventListener('click', async () => {
-                    const studentName = AppState.currentUser.nama;
-                    const tahunAjaran = document.getElementById('filterStudentResultTahunAjaran').value;
-                    const semester = document.getElementById('filterStudentResultSemester').value;
-                    const mataPelajaran = document.getElementById('filterStudentResultSubject').value;
+                    const studentResultsTableBody = document.getElementById('studentResultsTableBody');
+                    studentResultsTableBody.innerHTML = '<tr><td colspan="7" class="px-6 py-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat data...</td></tr>';
 
-                    const tableBody = document.getElementById('studentResultsTableBody');
-                    tableBody.innerHTML = '<tr><td colspan="7" class="px-6 py-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat hasil...</td></tr>';
-
+                    const filters = {
+                        action: 'getResults',
+                        namaLengkap: AppState.currentUser.nama,
+                        tahunAjaran: document.getElementById('filterStudentResultTahunAjaran').value,
+                        semester: document.getElementById('filterStudentResultSemester').value,
+                        mataPelajaran: document.getElementById('filterStudentResultSubject').value,
+                    };
                     try {
-                        const response = await fetch(`${GOOGLE_SCRIPT_URL}?action=getResults&namaLengkap=${encodeURIComponent(studentName)}`);
-                        const result = await response.json();
-                        if (result.status !== 'success') throw new Error(result.message);
-                        
-                        let results = result.data;
-                        if (tahunAjaran) results = results.filter(r => r.tahunAjaran === tahunAjaran);
-                        if (semester) results = results.filter(r => r.semester === semester);
-                        if (mataPelajaran) results = results.filter(r => r.mataPelajaran === mataPelajaran);
-                        
-                        this.renderStudentResultsTable(results);
-
-                    } catch(error) {
-                         tableBody.innerHTML = `<tr><td colspan="7" class="px-6 py-4 text-center text-red-500">Error: ${error.message}</td></tr>`;
+                        const result = await callGoogleScript('GET', filters);
+                        if (result.status === 'success') {
+                            this.renderStudentResultsTable(result.data);
+                        } else {
+                            throw new Error('Gagal memuat hasil ujian');
+                        }
+                    } catch (error) {
+                         studentResultsTableBody.innerHTML = '<tr><td colspan="7" class="px-6 py-4 text-center text-red-500"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data.</td></tr>';
                     }
                 });
                 document.getElementById('applyStudentResultFilterBtn').click();
@@ -3039,19 +3160,14 @@
                     const semester = document.getElementById('filterStudentGradeSemester').value;
                     const mataPelajaran = document.getElementById('filterStudentGradeSubject').value;
                     let query = db.collection('grades').where('namaSiswa', '==', AppState.currentUser.nama);
+                    
+                    if (tahunAjaran) query = query.where('tahunAjaran', '==', tahunAjaran);
+                    if (semester) query = query.where('semester', '==', semester);
+                    if (mataPelajaran) query = query.where('mataPelajaran', '==', mataPelajaran);
 
-                    query.onSnapshot(snapshot => {
-                        if (!AppState.currentUser) return; // FIX: Guard against null user
-                        let grades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        if (tahunAjaran) {
-                            grades = grades.filter(g => g.tahunAjaran === tahunAjaran);
-                        }
-                        if (semester) {
-                            grades = grades.filter(g => g.semester === semester);
-                        }
-                        if (mataPelajaran) {
-                            grades = grades.filter(g => g.mataPelajaran === mataPelajaran);
-                        }
+                    query.get().then(snapshot => {
+                        if (!AppState.currentUser) return; 
+                        const grades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         this.renderStudentGradesTable(grades);
                     });
                 });
@@ -3130,8 +3246,11 @@
                     this.startTimer();
                     this.updateProgress();
 
-                    // Security: Add tab visibility listener
+                    // Security: Add listeners
                     document.addEventListener('visibilitychange', this.handleVisibilityChange);
+                    AppState.examInitialWidth = window.innerWidth;
+                    AppState.examInitialHeight = window.innerHeight;
+                    window.addEventListener('resize', this.handleResize);
 
                     return true;
                 } catch (error) {
@@ -3225,113 +3344,105 @@
                 return `${h}:${m}:${s}`;
             },
 
-            // ================================
-            // ✅ FUNGSI SUBMIT UJIAN DENGAN PENGIRIMAN BATCH KE GOOGLE SHEET
-            // ================================
             async submitExam() {
+                if (AppState.examTimer) clearInterval(AppState.examTimer);
+
+                Swal.fire({
+                    title: 'Sedang Memproses Jawaban...',
+                    html: 'Mohon tunggu, jawaban Anda sedang disimpan.',
+                    allowOutsideClick: false,
+                    didOpen: () => { Swal.showLoading(); }
+                });
+
+                const examDetailsSnapshot = await db.collection('examQuestions').where('kode', '==', AppState.selectedExamCode).limit(1).get();
+                const firstQuestionData = !examDetailsSnapshot.empty ? examDetailsSnapshot.docs[0].data() : {};
+                const mataPelajaran = firstQuestionData.mataPelajaran || 'Tidak diketahui';
+                const semester = firstQuestionData.semester || 'Tidak diketahui';
+                const tahunAjaran = firstQuestionData.tahunAjaran || 'Tidak diketahui';
+
+                let totalScore = 0;
+                let resultsForSheet = [];
+                const submissionTimestamp = new Date().toISOString();
+
+                for (const [index, question] of AppState.questions.entries()) {
+                    const userAnswer = AppState.examAnswers[index] !== undefined ? String(AppState.examAnswers[index]) : 'Tidak dijawab';
+                    let point = 0;
+                    let status = 'salah';
+
+                    if (question.type === 'multiple') {
+                        if (question.correct !== undefined && AppState.examAnswers[index] === question.correct) {
+                            point = 100;
+                            status = 'benar';
+                        }
+                    } else { // Handles 'fill' and 'essay'
+                        point = 0;
+                        status = 'perlu dinilai';
+                    }
+                    totalScore += point;
+
+                    resultsForSheet.push({
+                        resultId: `${Date.now()}-${AppState.currentUser.username}-${index + 1}`,
+                        kelas: AppState.currentUser.kelas,
+                        kodesoal: AppState.selectedExamCode,
+                        namaLengkap: AppState.currentUser.nama,
+                        noSoal: index + 1,
+                        pertanyaan: question.question,
+                        jawabanSiswa: userAnswer,
+                        status: status,
+                        nilai: point,
+                        mataPelajaran: mataPelajaran,
+                        semester: semester,
+                        tahunAjaran: tahunAjaran,
+                        timestamp: submissionTimestamp
+                    });
+                }
+                
                 try {
-                    if (AppState.examTimer) clearInterval(AppState.examTimer);
-
-                    Swal.fire({
-                        title: 'Sedang Memproses Jawaban...',
-                        html: 'Mohon tunggu, semua jawaban Anda sedang disimpan.',
-                        allowOutsideClick: false,
-                        didOpen: () => Swal.showLoading()
+                    // Send all results to Google Sheet in one go
+                    await callGoogleScript('POST', {
+                        action: 'addResults',
+                        data: resultsForSheet
                     });
 
-                    // Ambil metadata ujian (mapel, semester, tahun ajaran)
-                    const examDetailsSnapshot = await db.collection('examQuestions')
-                        .where('kode', '==', AppState.selectedExamCode)
-                        .limit(1)
-                        .get();
-
-                    const firstQuestionData = !examDetailsSnapshot.empty ? examDetailsSnapshot.docs[0].data() : {};
-                    const mataPelajaran = firstQuestionData.mataPelajaran || 'Tidak diketahui';
-                    const semester = firstQuestionData.semester || 'Tidak diketahui';
-                    const tahunAjaran = firstQuestionData.tahunAjaran || 'Tidak diketahui';
-
-                    // Persiapkan hasil
-                    let totalScore = 0;
-                    const resultsPayload = [];
-
-                    for (const [index, question] of AppState.questions.entries()) {
-                        const userAnswer = AppState.examAnswers[index] !== undefined
-                            ? String(AppState.examAnswers[index])
-                            : 'Tidak dijawab';
-                        let point = 0;
-                        let status = 'salah';
-
-                        if (question.tipe === 'pilihan_ganda') {
-                            if (question.correct !== undefined && AppState.examAnswers[index] == question.correct) {
-                                point = 100;
-                                status = 'benar';
-                            }
-                        } else {
-                            point = 0;
-                            status = 'perlu dinilai';
-                        }
-
-                        totalScore += point;
-
-                        resultsPayload.push({
-                            kelas: AppState.currentUser.kelas,
-                            kodesoal: AppState.selectedExamCode,
-                            namaLengkap: AppState.currentUser.nama,
-                            noSoal: index + 1,
-                            pertanyaan: question.pertanyaan || question.question || '',
-                            jawabanSiswa: userAnswer,
-                            status: status,
-                            nilai: point,
-                            correctAnswer: question.correctAnswer || '',
-                            mataPelajaran,
-                            semester,
-                            tahunAjaran
-                        });
-                    }
-
-                    // ================================
-                    // 📤 KIRIM SEMUA DATA SEKALIGUS (BATCH)
-                    // ================================
-                    try {
-                        const response = await fetch(GOOGLE_SCRIPT_URL, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                                action: "saveExamResultBatch", // aksi baru
-                                data: resultsPayload
-                            }),
-                        });
-
-                        const res = await response.json();
-                        if (res.status !== "success") {
-                            throw new Error(res.message || "Gagal menyimpan ke Sheet");
-                        }
-                    } catch (error) {
-                        console.error("Error kirim hasil batch:", error);
-                        throw error;
-                    }
-
-                    // ================================
-                    // ✅ SELESAI
-                    // ================================
-                    Swal.fire({
-                        icon: "success",
-                        title: "Ujian Selesai!",
-                        text: "Semua jawaban berhasil dikirim ke server dan disimpan di Google Sheet.",
-                        confirmButtonText: "OK"
-                    }).then(() => {
-                        UI.showDashboard();
+                    // Save final grade summary to Firebase
+                    const finalScore = AppState.questions.length > 0 ? Math.round(totalScore / AppState.questions.length) : 0;
+                    const grade = finalScore >= 90 ? 'A' : finalScore >= 80 ? 'B' : finalScore >= 70 ? 'C' : finalScore >= 60 ? 'D' : 'E';
+                    
+                    await db.collection('grades').add({
+                        kelas: AppState.currentUser.kelas,
+                        namaSiswa: AppState.currentUser.nama,
+                        kodeSoal: AppState.selectedExamCode,
+                        mataPelajaran: mataPelajaran,
+                        semester: semester,
+                        tahunAjaran: tahunAjaran,
+                        nilai: finalScore,
+                        grade: grade,
+                        keterangan: finalScore >= 70 ? 'Lulus' : 'Tidak Lulus',
+                        waktuSelesai: new Date().toLocaleString('id-ID')
                     });
+
+                    ExamSecurity.clearAttempts(AppState.currentUser.username, AppState.selectedExamCode);
+                    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+                    window.removeEventListener('resize', this.handleResize);
+
+                    Swal.fire({
+                        title: 'Ujian Selesai!',
+                        html: `Terima kasih telah menyelesaikan ujian.<br>Anda akan diarahkan kembali ke halaman login.`,
+                        icon: 'success',
+                        confirmButtonText: 'OK',
+                        allowOutsideClick: false
+                    }).then(() => Auth.logout());
 
                 } catch (error) {
-                    console.error("Error saat submit ujian:", error);
+                    console.error("Error submitting exam: ", error);
                     Swal.fire({
-                        icon: "error",
-                        title: "Gagal Mengirim Jawaban",
-                        text: "Terjadi kesalahan saat mengirim hasil ujian. Silakan coba lagi."
+                        title: 'Error!',
+                        text: 'Gagal menyimpan hasil ujian. Silakan coba lagi.',
+                        icon: 'error'
                     });
                 }
             },
+
 
             showNotification(message, type = 'error') {
                 const Toast = Swal.mixin({
@@ -3406,6 +3517,7 @@
                     
                     // Remove the listener to prevent multiple triggers
                     document.removeEventListener('visibilitychange', UI.handleVisibilityChange);
+                    window.removeEventListener('resize', UI.handleResize);
                     
                     // Forcefully end the exam session and go back to the dashboard
                     Swal.fire({
@@ -3419,7 +3531,233 @@
                         UI.showDashboard();
                     });
                 }
+            },
+            
+            handleResize() {
+                if (AppState.currentView === 'exam') {
+                    // A small delay to avoid false positives from temporary resizes like scrollbar appearing
+                    setTimeout(() => {
+                        if (AppState.currentView !== 'exam') return; // Check again in case exam was already terminated
+
+                        const currentWidth = window.innerWidth;
+                        const currentHeight = window.innerHeight;
+
+                        if (currentWidth !== AppState.examInitialWidth || currentHeight !== AppState.examInitialHeight) {
+                            if (AppState.examTimer) clearInterval(AppState.examTimer);
+                            
+                            document.removeEventListener('visibilitychange', UI.handleVisibilityChange);
+                            window.removeEventListener('resize', UI.handleResize);
+                            
+                            Swal.fire({
+                                title: 'Sesi Ujian Dihentikan!',
+                                text: 'Ukuran jendela browser telah berubah. Untuk menjaga integritas ujian, sesi Anda dihentikan.',
+                                icon: 'warning',
+                                confirmButtonText: 'OK',
+                                allowOutsideClick: false
+                            }).then(() => {
+                                AppState.currentView = 'dashboard'; // prevent resubmission
+                                UI.showDashboard();
+                            });
+                        }
+                    }, 100); // 100ms delay
+                }
+            },
+
+            toggleAnswerFields(type, formId) {
+                const form = document.getElementById(formId);
+                const pilihanField = form.querySelector('#pilihanField');
+                const jawabanTeksField = form.querySelector('#jawabanTeksField');
+                
+                pilihanField.classList.toggle('hidden', type !== 'pilihan_ganda');
+                jawabanTeksField.classList.toggle('hidden', type === 'pilihan_ganda' || type === '');
+            },
+
+            renderPaginationControls(containerId, paginationState, navigationFn) {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+
+                const { currentPage, totalItems } = paginationState;
+                const totalPages = Math.ceil(totalItems / AppState.itemsPerPage);
+
+                if (totalPages <= 1) {
+                    container.innerHTML = '';
+                    return;
+                }
+
+                const isFirstPage = currentPage === 1;
+                const isLastPage = currentPage === totalPages;
+
+                container.innerHTML = `
+                    <button id="${containerId}-prev" class="bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" ${isFirstPage ? 'disabled' : ''}>
+                        <i class="fas fa-chevron-left mr-2"></i> Sebelumnya
+                    </button>
+                    <span class="text-sm text-gray-700">Halaman ${currentPage} dari ${totalPages}</span>
+                    <button id="${containerId}-next" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" ${isLastPage ? 'disabled' : ''}>
+                        Selanjutnya <i class="fas fa-chevron-right ml-2"></i>
+                    </button>
+                `;
+
+                document.getElementById(`${containerId}-prev`).addEventListener('click', () => {
+                    if (!isFirstPage) navigationFn(currentPage - 1);
+                });
+                document.getElementById(`${containerId}-next`).addEventListener('click', () => {
+                    if (!isLastPage) navigationFn(currentPage + 1);
+                });
+            },
+            
+            async loadAndRenderPaginatedQuestions() {
+                const questionsList = document.getElementById('questionsList');
+                questionsList.innerHTML = `<div class="text-center p-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2 text-gray-600">Memuat soal...</p></div>`;
+
+                const filters = {
+                    tahunAjaran: document.getElementById('filterTahunAjaran').value,
+                    semester: document.getElementById('filterSemester').value,
+                    kelas: document.getElementById('filterKelas').value,
+                    mataPelajaran: document.getElementById('filterSubject').value,
+                    kode: document.getElementById('filterCode').value
+                };
+
+                const cacheKey = AppState.cache.generateKey('questions', filters);
+                let cachedData = AppState.cache.get(cacheKey);
+
+                if (!cachedData) {
+                    let query = db.collection('examQuestions');
+                    // We fetch all and filter client-side because Firestore doesn't support all complex filter combinations
+                    const snapshot = await query.get();
+                    let allQuestions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    if (filters.tahunAjaran) allQuestions = allQuestions.filter(q => q.tahunAjaran === filters.tahunAjaran);
+                    if (filters.semester) allQuestions = allQuestions.filter(q => q.semester === filters.semester);
+                    if (filters.kelas) allQuestions = allQuestions.filter(q => q.kelas === filters.kelas);
+                    if (filters.mataPelajaran) allQuestions = allQuestions.filter(q => q.mataPelajaran === filters.mataPelajaran);
+                    if (filters.kode) allQuestions = allQuestions.filter(q => q.kode && q.kode.toLowerCase().includes(filters.kode.toLowerCase()));
+                    
+                    if (AppState.currentUser.role === 'guru' && AppState.currentUser.kelas) {
+                        const teacherGrade = AppState.currentUser.kelas.charAt(0);
+                        allQuestions = allQuestions.filter(q => q.kelas && q.kelas.startsWith(teacherGrade));
+                    }
+                    
+                    const typeOrder = { 'pilihan_ganda': 1, 'isian': 2, 'uraian': 3 };
+                    allQuestions.sort((a, b) => {
+                        const typeA = typeOrder[a.tipe] || 99;
+                        const typeB = typeOrder[b.tipe] || 99;
+                        if (typeA !== typeB) return typeA - typeB;
+                        const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
+                        const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
+                        return timeA - timeB;
+                    });
+
+
+                    AppState.cache.set(cacheKey, allQuestions);
+                    cachedData = allQuestions;
+                }
+
+                AppState.pagination.questions.totalItems = cachedData.length;
+                const start = (AppState.pagination.questions.currentPage - 1) * AppState.itemsPerPage;
+                const end = start + AppState.itemsPerPage;
+                const paginatedItems = cachedData.slice(start, end);
+
+                Management.renderFilteredQuestions(paginatedItems);
+
+                UI.renderPaginationControls('questionsPagination', AppState.pagination.questions, (newPage) => {
+                    AppState.pagination.questions.currentPage = newPage;
+                    this.loadAndRenderPaginatedQuestions();
+                });
+            },
+            
+            async loadAndRenderPaginatedResults() {
+                const resultsTableBody = document.getElementById('resultsTableBody');
+                resultsTableBody.innerHTML = '<tr><td colspan="10" class="px-6 py-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat data dari Google Sheet...</td></tr>';
+                
+                const filters = {
+                    action: 'getResults',
+                    tahunAjaran: document.getElementById('filterResultTahunAjaran').value,
+                    semester: document.getElementById('filterResultSemester').value,
+                    kodesoal: document.getElementById('filterResultCode').value,
+                    mataPelajaran: document.getElementById('filterResultSubject').value,
+                    kelas: document.getElementById('filterResultClass').value,
+                    namaLengkap: document.getElementById('filterResultStudent').value,
+                };
+
+                const cacheKey = AppState.cache.generateKey('results', filters);
+                let cachedData = AppState.cache.get(cacheKey);
+
+                if (!cachedData) {
+                    try {
+                        const result = await callGoogleScript('GET', filters);
+                        if (result.status === 'success') {
+                            result.data.sort((a, b) => a.noSoal - b.noSoal);
+                            AppState.cache.set(cacheKey, result.data);
+                            cachedData = result.data;
+                        } else {
+                            throw new Error(result.message || 'Gagal memuat data.');
+                        }
+                    } catch (error) {
+                        resultsTableBody.innerHTML = '<tr><td colspan="10" class="px-6 py-4 text-center text-red-500"><i class="fas fa-exclamation-triangle mr-2"></i>Gagal memuat data. Periksa koneksi atau hubungi admin.</td></tr>';
+                        return;
+                    }
+                }
+                
+                AppState.pagination.results.totalItems = cachedData.length;
+                const start = (AppState.pagination.results.currentPage - 1) * AppState.itemsPerPage;
+                const end = start + AppState.itemsPerPage;
+                const paginatedItems = cachedData.slice(start, end);
+
+                Management.renderFilteredResults(paginatedItems);
+
+                UI.renderPaginationControls('resultsPagination', AppState.pagination.results, (newPage) => {
+                    AppState.pagination.results.currentPage = newPage;
+                    this.loadAndRenderPaginatedResults();
+                });
+            },
+
+            async loadAndRenderPaginatedGrades() {
+                const gradesTableBody = document.getElementById('gradesTableBody');
+                gradesTableBody.innerHTML = '<tr><td colspan="10" class="px-6 py-4 text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Memuat data nilai...</td></tr>';
+
+                const filters = {
+                    tahunAjaran: document.getElementById('filterGradeTahunAjaran').value,
+                    semester: document.getElementById('filterGradeSemester').value,
+                    kodeSoal: document.getElementById('filterGradeCode').value,
+                    mataPelajaran: document.getElementById('filterGradeSubject').value,
+                    kelas: document.getElementById('filterGradeClass').value,
+                    namaSiswa: document.getElementById('filterGradeStudent').value
+                };
+
+                const cacheKey = AppState.cache.generateKey('grades', filters);
+                let cachedData = AppState.cache.get(cacheKey);
+
+                if (!cachedData) {
+                    let query = db.collection('grades');
+                    const snapshot = await query.get();
+                    let allGrades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                    if (filters.tahunAjaran) allGrades = allGrades.filter(g => g.tahunAjaran === filters.tahunAjaran);
+                    if (filters.semester) allGrades = allGrades.filter(g => g.semester === filters.semester);
+                    if (filters.kelas) allGrades = allGrades.filter(g => g.kelas === filters.kelas);
+                    if (filters.mataPelajaran) allGrades = allGrades.filter(g => g.mataPelajaran === filters.mataPelajaran);
+                    if (filters.namaSiswa) allGrades = allGrades.filter(g => g.namaSiswa === filters.namaSiswa);
+                    if (filters.kodeSoal) allGrades = allGrades.filter(g => g.kodeSoal.toLowerCase().includes(filters.kodeSoal.toLowerCase()));
+
+                    allGrades.sort((a, b) => a.namaSiswa.localeCompare(b.namaSiswa));
+                    
+                    AppState.cache.set(cacheKey, allGrades);
+                    cachedData = allGrades;
+                }
+
+                AppState.pagination.grades.totalItems = cachedData.length;
+                const start = (AppState.pagination.grades.currentPage - 1) * AppState.itemsPerPage;
+                const end = start + AppState.itemsPerPage;
+                const paginatedItems = cachedData.slice(start, end);
+
+                Management.renderFilteredGrades(paginatedItems);
+
+                UI.renderPaginationControls('gradesPagination', AppState.pagination.grades, (newPage) => {
+                    AppState.pagination.grades.currentPage = newPage;
+                    this.loadAndRenderPaginatedGrades();
+                });
             }
+
         };
 
         // =================================================================
